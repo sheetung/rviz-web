@@ -78,6 +78,42 @@ test('filters invalid coordinates without leaving gaps in output arrays', () => 
   assert.deepEqual([...result.positions], [1, 2, 3, 7, 8, 9])
 })
 
+test('sparse decoding keeps every configured Nth point', () => {
+  const points = Array.from({ length: 10 }, (_, index) => [index, index + 1, index + 2])
+  const result = decodePointCloudMessage(pointCloudMessage(points), { sampleStep: 4 })
+
+  assert.equal(result.pointCount, 3)
+  assert.equal(result.totalPoints, 10)
+  assert.deepEqual([...result.positions], [0, 1, 2, 4, 5, 6, 8, 9, 10])
+  assert.deepEqual(result.bounds, {
+    minimum: [0, 1, 2],
+    maximum: [8, 9, 10]
+  })
+})
+
+test('sparse decoding also applies to aligned binary XYZ transport', () => {
+  const source = new Float32Array([
+    0, 1, 2,
+    3, 4, 5,
+    6, 7, 8,
+    9, 10, 11
+  ])
+  const message = pointCloudMessage([], {
+    width: 4,
+    height: 1,
+    point_step: 12,
+    row_step: 48,
+    data: new Uint8Array(source.buffer),
+    data_encoding: 'pointcloud-binary-v1'
+  })
+
+  const result = decodePointCloudMessage(message, { sampleStep: 2 })
+
+  assert.equal(result.pointCount, 2)
+  assert.equal(result.totalPoints, 4)
+  assert.deepEqual([...result.positions], [0, 1, 2, 6, 7, 8])
+})
+
 test('honors organized point cloud row padding', () => {
   const pointStep = 12
   const rowStep = 32

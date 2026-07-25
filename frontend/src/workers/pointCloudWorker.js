@@ -1,9 +1,9 @@
 import { decodePointCloudMessage } from '../utils/pointCloudDecoder.js'
 
 self.onmessage = (event) => {
-  const { topic, generation, message } = event.data || {}
+  const { topic, generation, message, sampleStep } = event.data || {}
   try {
-    const decoded = decodePointCloudMessage(message)
+    const decoded = decodePointCloudMessage(message, { sampleStep })
     self.postMessage(
       { topic, generation, decoded },
       [decoded.positions.buffer]

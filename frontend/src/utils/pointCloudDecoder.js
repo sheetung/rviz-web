@@ -46,6 +46,11 @@ const readField = (view, byteOffset, field, littleEndian) => {
 
 const validCoordinate = (value) => Number.isFinite(value) && Math.abs(value) < 1000
 
+const normalizeSampleStep = (value) => {
+  const numericValue = Number(value)
+  return Math.max(1, Math.min(32, Number.isFinite(numericValue) ? Math.round(numericValue) : 1))
+}
+
 const emptyResult = (error, totalPoints = 0) => ({
   error,
   pointCount: 0,
@@ -62,14 +67,14 @@ const finalizeResult = (positions, pointCount, totalPoints, bounds) => ({
   bounds
 })
 
-const decodeStructuredPoints = (points) => {
+const decodeStructuredPoints = (points, sampleStep) => {
   const totalPoints = Math.min(points.length, 5000)
-  const positions = new Float32Array(totalPoints * 3)
+  const positions = new Float32Array(Math.ceil(totalPoints / sampleStep) * 3)
   const minimum = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY]
   const maximum = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY]
   let pointCount = 0
 
-  for (let index = 0; index < totalPoints; index++) {
+  for (let index = 0; index < totalPoints; index += sampleStep) {
     const point = points[index]
     const x = Number(point?.x ?? 0)
     const y = Number(point?.y ?? 0)
@@ -111,10 +116,36 @@ const compactFloat32Layout = (message, fields, pointStep, rowStep, width, height
   })
 }
 
-const decodeCompactFloat32 = (data, totalPoints) => {
+const decodeCompactFloat32 = (data, totalPoints, sampleStep) => {
   const source = new Float32Array(data.buffer, data.byteOffset, totalPoints * 3)
   const minimum = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY]
   const maximum = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY]
+
+  if (sampleStep > 1) {
+    const positions = new Float32Array(Math.ceil(totalPoints / sampleStep) * 3)
+    let pointCount = 0
+    for (let index = 0; index < totalPoints; index += sampleStep) {
+      const sourceOffset = index * 3
+      const x = source[sourceOffset]
+      const y = source[sourceOffset + 1]
+      const z = source[sourceOffset + 2]
+      if (!validCoordinate(x) || !validCoordinate(y) || !validCoordinate(z)) continue
+      const outputOffset = pointCount * 3
+      positions[outputOffset] = x
+      positions[outputOffset + 1] = y
+      positions[outputOffset + 2] = z
+      minimum[0] = Math.min(minimum[0], x)
+      minimum[1] = Math.min(minimum[1], y)
+      minimum[2] = Math.min(minimum[2], z)
+      maximum[0] = Math.max(maximum[0], x)
+      maximum[1] = Math.max(maximum[1], y)
+      maximum[2] = Math.max(maximum[2], z)
+      pointCount++
+    }
+    if (pointCount === 0) return emptyResult('点云为空或数据格式无效', totalPoints)
+    return finalizeResult(positions, pointCount, totalPoints, { minimum, maximum })
+  }
+
   let allCoordinatesValid = true
 
   for (let offset = 0; offset < source.length; offset += 3) {
@@ -154,10 +185,11 @@ const decodeCompactFloat32 = (data, totalPoints) => {
   return finalizeResult(positions, pointCount, totalPoints, { minimum, maximum })
 }
 
-export const decodePointCloudMessage = (message) => {
+export const decodePointCloudMessage = (message, options = {}) => {
+  const sampleStep = normalizeSampleStep(options.sampleStep)
   if (!message || typeof message !== 'object') return emptyResult('点云消息为空')
   if (message.error) return emptyResult(String(message.error))
-  if (Array.isArray(message.points)) return decodeStructuredPoints(message.points)
+  if (Array.isArray(message.points)) return decodeStructuredPoints(message.points, sampleStep)
   if (!Array.isArray(message.fields) || message.data === undefined) {
     return emptyResult('点云缺少 fields 或 data')
   }
@@ -173,7 +205,7 @@ export const decodePointCloudMessage = (message) => {
   if (data.byteLength === 0) return emptyResult('点云数据为空', totalPoints)
 
   if (compactFloat32Layout(message, message.fields, pointStep, rowStep, width, height, data)) {
-    return decodeCompactFloat32(data, totalPoints)
+    return decodeCompactFloat32(data, totalPoints, sampleStep)
   }
 
   const xField = pointField(message.fields, 'x', 0)
@@ -187,7 +219,7 @@ export const decodePointCloudMessage = (message) => {
     return emptyResult('点云 XYZ 字段超出 point_step', totalPoints)
   }
 
-  const positions = new Float32Array(totalPoints * 3)
+  const positions = new Float32Array(Math.ceil(totalPoints / sampleStep) * 3)
   const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
   const littleEndian = message.is_bigendian !== true
   const hasRowPadding = message.sampled !== true && height > 1 && rowStep >= width * pointStep
@@ -195,7 +227,7 @@ export const decodePointCloudMessage = (message) => {
   const maximum = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY]
   let pointCount = 0
 
-  for (let index = 0; index < totalPoints; index++) {
+  for (let index = 0; index < totalPoints; index += sampleStep) {
     const row = Math.floor(index / width)
     const column = index % width
     const byteOffset = hasRowPadding ? row * rowStep + column * pointStep : index * pointStep

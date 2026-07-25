@@ -209,6 +209,13 @@ export default {
     let transformFrameRequest = null
     let frameListSignature = ''
 
+    const pointCloudSampleStep = (topic) => {
+      const config = displayConfigs.get(topic) || {}
+      if (config.sparse !== true) return 1
+      const sampleStep = Number(config.sampleStep)
+      return Math.max(2, Math.min(32, Number.isFinite(sampleStep) ? Math.round(sampleStep) : 4))
+    }
+
     const emitFrameList = () => {
       const frameIds = [...new Set([
         ...tfBuffer.frameIds(),
@@ -359,7 +366,12 @@ export default {
             : message?.data instanceof ArrayBuffer
               ? [message.data]
               : []
-          worker.postMessage({ topic, generation, message }, transferable)
+          worker.postMessage({
+            topic,
+            generation,
+            message,
+            sampleStep: pointCloudSampleStep(topic)
+          }, transferable)
         } catch (error) {
           pointCloudDecodesInFlight.delete(topic)
           disablePointCloudWorker(error)
@@ -1931,6 +1943,7 @@ export default {
       const opacity = persistentSettings.pointcloud.opacity ?? 1.0
       const positions = decoded.positions
       const pointsProcessed = decoded.pointCount
+      const sampleStep = pointCloudSampleStep(topic)
       const box = pointCloudBounds(decoded)
       const size = box
         ? Math.max(
@@ -2024,6 +2037,8 @@ export default {
         messageType: 'sensor_msgs/msg/PointCloud2',
         renderStyle,
         pointCount: pointsProcessed,
+        originalPointCount: decoded.totalPoints,
+        sampleStep,
         originalMessage: pointCloudTransformMessage(message),
         decodedPointCloud: decoded
       }
@@ -2102,7 +2117,7 @@ export default {
             if (shouldLog) debugLog(`Using offsets - X: ${xOffset}, Y: ${yOffset}, Z: ${zOffset}`)
             
             // 解析完整点云。不要只取开头一段，否则地图会像被截断。
-            const sampleStep = 1
+            const sampleStep = pointCloudSampleStep(topic)
             const hasUsableRowStep = !message.sampled && height > 1 && rowStep >= width * pointStep
 
             for (let i = 0; i < totalPoints; i += sampleStep) {
@@ -2141,7 +2156,8 @@ export default {
           // 如果是简单的点数组格式
           else if (Array.isArray(message.points)) {
             if (shouldLog) debugLog('Processing points array format')
-            for (let i = 0; i < Math.min(message.points.length, 5000); i++) {
+            const sampleStep = pointCloudSampleStep(topic)
+            for (let i = 0; i < Math.min(message.points.length, 5000); i += sampleStep) {
               const point = message.points[i]
               if (point && typeof point === 'object') {
                 const x = point.x || 0
@@ -2229,6 +2245,7 @@ export default {
             messageType: 'sensor_msgs/msg/PointCloud2',
             renderStyle,
             pointCount: pointsProcessed,
+            sampleStep: pointCloudSampleStep(topic),
             originalMessage: message
           }
 

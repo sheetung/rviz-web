@@ -261,6 +261,47 @@
           </div>
 
           <div
+            v-if="display.expanded && isPointCloudDisplay(display)"
+            class="property-row display-property"
+            @click.stop
+          >
+            <span>稀疏显示</span>
+            <el-checkbox
+              v-model="display.config.sparse"
+              class="display-toggle"
+              @change="updateDisplayTopic(display)"
+            >
+              启用
+            </el-checkbox>
+          </div>
+
+          <div
+            v-if="display.expanded && isPointCloudDisplay(display) && display.config.sparse"
+            class="property-row display-property"
+            @click.stop
+          >
+            <span>采样间隔</span>
+            <div class="display-setting-control">
+              <el-slider
+                v-model="display.config.sampleStep"
+                :min="2"
+                :max="32"
+                :step="1"
+                @input="updateDisplayTopic(display)"
+              />
+              <el-input-number
+                v-model="display.config.sampleStep"
+                :min="2"
+                :max="32"
+                :step="1"
+                controls-position="right"
+                size="small"
+                @change="updateDisplayTopic(display)"
+              />
+            </div>
+          </div>
+
+          <div
             v-if="display.expanded && isPathDisplay(display)"
             class="property-row display-property"
             @click.stop
@@ -520,7 +561,9 @@ export default {
         return {
           renderStyle: 'points',
           pointSize: 0.03,
-          boxSize: 0.1
+          boxSize: 0.1,
+          sparse: false,
+          sampleStep: 4
         }
       }
       if (isPathMessageType(messageType || '')) {
@@ -538,10 +581,21 @@ export default {
       return {}
     }
 
-    const normalizeDisplayConfig = (messageType, config = {}) => ({
-      ...createDefaultDisplayConfig(messageType),
-      ...(config || {})
-    })
+    const normalizeDisplayConfig = (messageType, config = {}) => {
+      const normalized = {
+        ...createDefaultDisplayConfig(messageType),
+        ...(config || {})
+      }
+      if ((messageType || '').includes('PointCloud2')) {
+        const sampleStep = Number(normalized.sampleStep)
+        normalized.sparse = normalized.sparse === true
+        normalized.sampleStep = Math.max(
+          2,
+          Math.min(32, Number.isFinite(sampleStep) ? Math.round(sampleStep) : 4)
+        )
+      }
+      return normalized
+    }
 
     const createDisplayTopic = (name, messageType, visible = true, config = {}) => ({
       id: `display_${++displayIdCounter}`,
@@ -1081,6 +1135,11 @@ export default {
 }
 
 .global-toggle {
+  justify-self: start;
+  margin-right: 0;
+}
+
+.display-toggle {
   justify-self: start;
   margin-right: 0;
 }

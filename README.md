@@ -40,6 +40,8 @@ RVizWeb 是一个面向 ROS2 的浏览器可视化前端，用于查看点云、
   - 后端使用 FFmpeg 将 RTSP 转为浏览器可显示的 MJPEG，播放 URL 只包含短期会话 ID；短暂卡顿会自动重连并保留最后一帧。
 - 点云与路径样式：
   - PointCloud2 支持按话题选择 `Points` 或 `Boxes` 渲染，并分别设置 `Point Size` 或 `Box Size`。
+  - 每个 PointCloud2 Display 可独立启用“稀疏显示”，设置每 2–32 个点保留 1 个点；该选项随 `.rvizweb` 配置保存。
+  - 稀疏显示发生在前端 Worker 解码阶段，不改变后端 XYZ 紧凑化和二进制传输，因此不会增加网络开销，也不会影响其他客户端。
   - `Boxes` 使用实例化立方体渲染，适合占用体素地图；`Points` 适合高频、大规模实时点云。
   - Path 支持按话题设置线宽和颜色。
   - Marker/MarkerArray 按 `(ns,id)` 更新，支持 `DELETE`、`DELETEALL`、生命周期以及常用几何类型；未知类型会显示错误，不会伪装成其他几何体。

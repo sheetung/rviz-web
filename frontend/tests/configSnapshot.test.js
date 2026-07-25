@@ -28,6 +28,17 @@ test('config fingerprints detect point cloud render style changes', () => {
   assert.notEqual(createConfigFingerprint(points), createConfigFingerprint(boxes))
 })
 
+test('config fingerprints detect point cloud sparse display changes', () => {
+  const full = {
+    displays: [{ name: '/points', config: { sparse: false, sampleStep: 4 } }]
+  }
+  const sparse = {
+    displays: [{ name: '/points', config: { sparse: true, sampleStep: 8 } }]
+  }
+
+  assert.notEqual(createConfigFingerprint(full), createConfigFingerprint(sparse))
+})
+
 test('config fingerprints detect RTSP source and overlay layout changes', () => {
   const first = {
     video: {
