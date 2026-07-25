@@ -20,41 +20,7 @@ const POINT_FIELD_BYTES = {
   8: 8
 }
 
-const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value))
-
-const hueChannel = (minimum, maximum, hue) => {
-  let normalizedHue = hue
-  if (normalizedHue < 0) normalizedHue += 1
-  if (normalizedHue > 1) normalizedHue -= 1
-  if (normalizedHue < 1 / 6) return minimum + (maximum - minimum) * 6 * normalizedHue
-  if (normalizedHue < 1 / 2) return maximum
-  if (normalizedHue < 2 / 3) return minimum + (maximum - minimum) * (2 / 3 - normalizedHue) * 6
-  return minimum
-}
-
-const writeHeightColor = (colors, offset, z) => {
-  const normalizedZ = clamp((z + 2) / 4, 0, 1)
-  const hue = (1 - normalizedZ) * (240 / 360)
-  const saturation = 0.8
-  const lightness = 0.6
-  const maximum = lightness + saturation - lightness * saturation
-  const minimum = 2 * lightness - maximum
-  colors[offset] = hueChannel(minimum, maximum, hue + 1 / 3)
-  colors[offset + 1] = hueChannel(minimum, maximum, hue)
-  colors[offset + 2] = hueChannel(minimum, maximum, hue - 1 / 3)
-}
-
-const decodeBase64 = (value) => {
-  const binary = globalThis.atob(value)
-  const result = new Uint8Array(binary.length)
-  for (let index = 0; index < binary.length; index++) {
-    result[index] = binary.charCodeAt(index)
-  }
-  return result
-}
-
 const normalizePointData = (message) => {
-  if (typeof message.data === 'string') return decodeBase64(message.data)
   if (message.data instanceof Uint8Array) return message.data
   if (ArrayBuffer.isView(message.data)) {
     return new Uint8Array(message.data.buffer, message.data.byteOffset, message.data.byteLength)
@@ -85,23 +51,20 @@ const emptyResult = (error, totalPoints = 0) => ({
   pointCount: 0,
   totalPoints,
   positions: new Float32Array(),
-  colors: new Float32Array(),
   bounds: null
 })
 
-const finalizeResult = (positions, colors, pointCount, totalPoints, bounds) => ({
+const finalizeResult = (positions, pointCount, totalPoints, bounds) => ({
   error: '',
   pointCount,
   totalPoints,
   positions: positions.subarray(0, pointCount * 3),
-  colors: colors.subarray(0, pointCount * 3),
   bounds
 })
 
 const decodeStructuredPoints = (points) => {
   const totalPoints = Math.min(points.length, 5000)
   const positions = new Float32Array(totalPoints * 3)
-  const colors = new Float32Array(totalPoints * 3)
   const minimum = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY]
   const maximum = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY]
   let pointCount = 0
@@ -117,7 +80,6 @@ const decodeStructuredPoints = (points) => {
     positions[outputOffset] = x
     positions[outputOffset + 1] = y
     positions[outputOffset + 2] = z
-    writeHeightColor(colors, outputOffset, z)
     minimum[0] = Math.min(minimum[0], x)
     minimum[1] = Math.min(minimum[1], y)
     minimum[2] = Math.min(minimum[2], z)
@@ -128,7 +90,68 @@ const decodeStructuredPoints = (points) => {
   }
 
   if (pointCount === 0) return emptyResult('点云为空或数据格式无效', totalPoints)
-  return finalizeResult(positions, colors, pointCount, totalPoints, { minimum, maximum })
+  return finalizeResult(positions, pointCount, totalPoints, { minimum, maximum })
+}
+
+const compactFloat32Layout = (message, fields, pointStep, rowStep, width, height, data) => {
+  if (
+    message.data_encoding !== 'pointcloud-binary-v1' ||
+    message.is_bigendian === true ||
+    pointStep !== 12 ||
+    rowStep !== width * pointStep ||
+    data.byteOffset % Float32Array.BYTES_PER_ELEMENT !== 0 ||
+    data.byteLength < width * height * pointStep
+  ) return false
+
+  return ['x', 'y', 'z'].every((name, index) => {
+    const field = fields.find(candidate => candidate?.name === name)
+    return Number(field?.offset) === index * 4 &&
+      Number(field?.datatype) === 7 &&
+      Number(field?.count ?? 1) === 1
+  })
+}
+
+const decodeCompactFloat32 = (data, totalPoints) => {
+  const source = new Float32Array(data.buffer, data.byteOffset, totalPoints * 3)
+  const minimum = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY]
+  const maximum = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY]
+  let allCoordinatesValid = true
+
+  for (let offset = 0; offset < source.length; offset += 3) {
+    const x = source[offset]
+    const y = source[offset + 1]
+    const z = source[offset + 2]
+    if (!validCoordinate(x) || !validCoordinate(y) || !validCoordinate(z)) {
+      allCoordinatesValid = false
+      continue
+    }
+    minimum[0] = Math.min(minimum[0], x)
+    minimum[1] = Math.min(minimum[1], y)
+    minimum[2] = Math.min(minimum[2], z)
+    maximum[0] = Math.max(maximum[0], x)
+    maximum[1] = Math.max(maximum[1], y)
+    maximum[2] = Math.max(maximum[2], z)
+  }
+
+  if (allCoordinatesValid) {
+    return finalizeResult(source, totalPoints, totalPoints, { minimum, maximum })
+  }
+
+  const positions = new Float32Array(totalPoints * 3)
+  let pointCount = 0
+  for (let offset = 0; offset < source.length; offset += 3) {
+    const x = source[offset]
+    const y = source[offset + 1]
+    const z = source[offset + 2]
+    if (!validCoordinate(x) || !validCoordinate(y) || !validCoordinate(z)) continue
+    const outputOffset = pointCount * 3
+    positions[outputOffset] = x
+    positions[outputOffset + 1] = y
+    positions[outputOffset + 2] = z
+    pointCount++
+  }
+  if (pointCount === 0) return emptyResult('点云为空或数据格式无效', totalPoints)
+  return finalizeResult(positions, pointCount, totalPoints, { minimum, maximum })
 }
 
 export const decodePointCloudMessage = (message) => {
@@ -146,13 +169,12 @@ export const decodePointCloudMessage = (message) => {
   const rowStep = Math.max(pointStep * width, Number(message.row_step) || 0)
   if (totalPoints === 0) return emptyResult('点云为空或数据格式无效')
 
-  let data
-  try {
-    data = normalizePointData(message)
-  } catch (error) {
-    return emptyResult(`Base64 解码失败: ${error.message}`, totalPoints)
-  }
+  const data = normalizePointData(message)
   if (data.byteLength === 0) return emptyResult('点云数据为空', totalPoints)
+
+  if (compactFloat32Layout(message, message.fields, pointStep, rowStep, width, height, data)) {
+    return decodeCompactFloat32(data, totalPoints)
+  }
 
   const xField = pointField(message.fields, 'x', 0)
   const yField = pointField(message.fields, 'y', 4)
@@ -166,7 +188,6 @@ export const decodePointCloudMessage = (message) => {
   }
 
   const positions = new Float32Array(totalPoints * 3)
-  const colors = new Float32Array(totalPoints * 3)
   const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
   const littleEndian = message.is_bigendian !== true
   const hasRowPadding = message.sampled !== true && height > 1 && rowStep >= width * pointStep
@@ -189,7 +210,6 @@ export const decodePointCloudMessage = (message) => {
     positions[outputOffset] = x
     positions[outputOffset + 1] = y
     positions[outputOffset + 2] = z
-    writeHeightColor(colors, outputOffset, z)
     minimum[0] = Math.min(minimum[0], x)
     minimum[1] = Math.min(minimum[1], y)
     minimum[2] = Math.min(minimum[2], z)
@@ -200,5 +220,5 @@ export const decodePointCloudMessage = (message) => {
   }
 
   if (pointCount === 0) return emptyResult('点云为空或数据格式无效', totalPoints)
-  return finalizeResult(positions, colors, pointCount, totalPoints, { minimum, maximum })
+  return finalizeResult(positions, pointCount, totalPoints, { minimum, maximum })
 }

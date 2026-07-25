@@ -461,21 +461,15 @@ class MessageConverter:
                 result["point_step"] = output_point_step
                 result["row_step"] = result["width"] * output_point_step
 
-                # 大型数据使用 Base64；只压缩点记录，不减少点数。
-                if len(point_data) > 10000:
-                    import base64
-
-                    result["data"] = base64.b64encode(point_data).decode("ascii")
-                    result["data_encoding"] = "base64"
-                    logger.debug(
-                        "Pointcloud transmission - %s -> %s bytes, %s points retained",
-                        len(pointcloud_msg.data),
-                        len(point_data),
-                        total_points,
-                    )
-                else:
-                    result["data"] = list(point_data)
-                    result["data_encoding"] = "array"
+                # 保留原始字节直到连接发送阶段，由 WebSocket 直接组装 binary-v1 帧。
+                result["data"] = bytes(point_data)
+                result["data_encoding"] = "binary"
+                logger.debug(
+                    "Pointcloud transmission - %s -> %s bytes, %s points retained",
+                    len(pointcloud_msg.data),
+                    len(point_data),
+                    total_points,
+                )
 
                 result["sampled"] = False
                 result["original_points"] = total_points

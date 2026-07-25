@@ -24,13 +24,13 @@ const pointCloudMessage = (points, overrides = {}) => {
       { name: 'y', offset: 4, datatype: 7, count: 1 },
       { name: 'z', offset: 8, datatype: 7, count: 1 }
     ],
-    data: Buffer.from(data).toString('base64'),
-    data_encoding: 'base64',
+    data,
+    data_encoding: 'binary',
     ...overrides
   }
 }
 
-test('decodes base64 PointCloud2 data into compact transferable arrays', () => {
+test('decodes PointCloud2 bytes into a compact transferable position array', () => {
   const result = decodePointCloudMessage(pointCloudMessage([
     [1, 2, -1],
     [3, 4, 2]
@@ -44,8 +44,27 @@ test('decodes base64 PointCloud2 data into compact transferable arrays', () => {
     minimum: [1, 2, -1],
     maximum: [3, 4, 2]
   })
-  assert.equal(result.colors.length, 6)
-  result.colors.forEach(value => assert.ok(Number.isFinite(value)))
+  assert.equal('colors' in result, false)
+})
+
+test('uses aligned binary XYZ data directly without copying valid points', () => {
+  const frame = new ArrayBuffer(4 + 24)
+  const source = new Float32Array(frame, 4, 6)
+  source.set([1, 2, 3, 4, 5, 6])
+  const message = pointCloudMessage([], {
+    width: 2,
+    height: 1,
+    point_step: 12,
+    row_step: 24,
+    data: new Uint8Array(frame, 4, 24),
+    data_encoding: 'pointcloud-binary-v1'
+  })
+
+  const result = decodePointCloudMessage(message)
+
+  assert.equal(result.positions.buffer, frame)
+  assert.equal(result.positions.byteOffset, 4)
+  assert.deepEqual([...result.positions], [1, 2, 3, 4, 5, 6])
 })
 
 test('filters invalid coordinates without leaving gaps in output arrays', () => {
@@ -84,7 +103,7 @@ test('honors organized point cloud row padding', () => {
     height: 2,
     point_step: pointStep,
     row_step: rowStep,
-    data: Buffer.from(data).toString('base64')
+    data
   }))
 
   assert.equal(result.pointCount, 4)

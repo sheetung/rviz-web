@@ -1,12 +1,18 @@
 import asyncio
 import json
+import struct
 from collections import OrderedDict
 from datetime import datetime
 from unittest.mock import AsyncMock
 import pytest
 
 from app.models.ros import ConnectionInfo
-from app.services.connection_manager import ConnectionManager, _serialize_json_message
+from app.services.connection_manager import (
+    POINTCLOUD_BINARY_TRANSPORT,
+    ConnectionManager,
+    _serialize_binary_pointcloud_message,
+    _serialize_json_message,
+)
 
 
 @pytest.mark.asyncio
@@ -54,6 +60,45 @@ def test_websocket_json_replaces_non_finite_numbers_with_null():
         "vxy_max": None,
         "ref_lat": None,
     }
+
+
+def _binary_pointcloud_message(data=b"\0" * 24):
+    return {
+        "op": "publish",
+        "topic": "/points",
+        "msg": {
+            "width": 2,
+            "height": 1,
+            "point_step": 12,
+            "row_step": 24,
+            "fields": [
+                {"name": "x", "offset": 0, "datatype": 7, "count": 1},
+                {"name": "y", "offset": 4, "datatype": 7, "count": 1},
+                {"name": "z", "offset": 8, "datatype": 7, "count": 1},
+            ],
+            "data": data,
+            "data_encoding": "binary",
+        },
+    }
+
+
+def test_binary_pointcloud_frame_has_aligned_raw_payload():
+    point_data = struct.pack("<ffffff", 1, 2, 3, 4, 5, 6)
+    frame = _serialize_binary_pointcloud_message(_binary_pointcloud_message(point_data))
+
+    magic, version, flags, reserved, metadata_length = struct.unpack_from(
+        "<4sBBHI", frame
+    )
+    payload_offset = (12 + metadata_length + 3) & ~3
+    metadata = json.loads(frame[12 : 12 + metadata_length])
+
+    assert magic == b"RVPC"
+    assert version == 1
+    assert flags == reserved == 0
+    assert payload_offset % 4 == 0
+    assert metadata["msg"]["data_encoding"] == POINTCLOUD_BINARY_TRANSPORT
+    assert "data" not in metadata["msg"]
+    assert frame[payload_offset:] == point_data
 
 
 @pytest.mark.asyncio
@@ -160,3 +205,30 @@ async def test_slow_sender_skips_intermediate_replaceable_frames(monkeypatch):
     await manager.close_all()
 
     assert sent_sequences == [1, 3]
+
+
+@pytest.mark.asyncio
+async def test_pointcloud_is_always_sent_as_binary_frame(monkeypatch):
+    async def run_inline(function, *args, **kwargs):
+        return function(*args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "to_thread", run_inline)
+    manager = ConnectionManager()
+    websocket = AsyncMock()
+    frame_sent = asyncio.Event()
+
+    async def send_bytes(frame):
+        assert frame.startswith(b"RVPC")
+        frame_sent.set()
+
+    websocket.send_bytes.side_effect = send_bytes
+    assert await manager.connect(websocket, "client-1")
+    info = manager.connection_info["client-1"]
+    info.subscribed_topics.append("/points")
+
+    await manager.broadcast(_binary_pointcloud_message())
+    await asyncio.wait_for(frame_sent.wait(), timeout=1)
+    await manager.close_all()
+
+    websocket.send_bytes.assert_awaited_once()
+    websocket.send_text.assert_not_awaited()

@@ -8,6 +8,7 @@ import contextlib
 import json
 import logging
 import math
+import struct
 from collections import OrderedDict
 from datetime import datetime
 from typing import Dict
@@ -17,6 +18,11 @@ from fastapi import WebSocket
 from ..models.ros import ConnectionInfo
 
 logger = logging.getLogger(__name__)
+
+POINTCLOUD_BINARY_TRANSPORT = "pointcloud-binary-v1"
+_POINTCLOUD_BINARY_MAGIC = b"RVPC"
+_POINTCLOUD_BINARY_VERSION = 1
+_POINTCLOUD_BINARY_HEADER = struct.Struct("<4sBBHI")
 
 
 def _replace_non_finite_numbers(value):
@@ -40,6 +46,64 @@ def _serialize_json_message(message: dict) -> str:
             allow_nan=False,
             separators=(",", ":"),
         )
+
+
+def _pointcloud_binary_data(message: dict):
+    """返回内部 PointCloud2 原始字节；其他消息返回 None。"""
+    if message.get("op") != "publish":
+        return None
+    pointcloud = message.get("msg")
+    if not isinstance(pointcloud, dict):
+        return None
+    data = pointcloud.get("data")
+    if pointcloud.get("data_encoding") != "binary" or not isinstance(
+        data,
+        (bytes, bytearray, memoryview),
+    ):
+        return None
+    return data
+
+
+def _serialize_binary_pointcloud_message(message: dict) -> bytes:
+    """编码 pointcloud-binary-v1 帧，元数据 JSON 后接 4 字节对齐的原始数据。"""
+    point_data = _pointcloud_binary_data(message)
+    if point_data is None:
+        raise ValueError("message is not an internal binary PointCloud2 update")
+
+    pointcloud = message["msg"]
+    metadata = {
+        **message,
+        "msg": {
+            **pointcloud,
+            "data_encoding": POINTCLOUD_BINARY_TRANSPORT,
+        },
+    }
+    metadata["msg"].pop("data", None)
+    metadata_bytes = _serialize_json_message(metadata).encode("utf-8")
+    payload_offset = _POINTCLOUD_BINARY_HEADER.size + len(metadata_bytes)
+    padding_size = (-payload_offset) % 4
+    prefix = _POINTCLOUD_BINARY_HEADER.pack(
+        _POINTCLOUD_BINARY_MAGIC,
+        _POINTCLOUD_BINARY_VERSION,
+        0,
+        0,
+        len(metadata_bytes),
+    )
+    return b"".join(
+        (
+            prefix,
+            metadata_bytes,
+            b"\0" * padding_size,
+            bytes(point_data),
+        )
+    )
+
+
+def _serialize_topic_message(message: dict):
+    """PointCloud2 使用二进制帧，其他 topic 使用 JSON 文本。"""
+    if _pointcloud_binary_data(message) is not None:
+        return _serialize_binary_pointcloud_message(message)
+    return _serialize_json_message(message)
 
 
 class ConnectionManager:
@@ -135,17 +199,17 @@ class ConnectionManager:
 
                 queued_message_source = None
                 try:
-                    message_text = queue.get_nowait()
+                    outbound_message = queue.get_nowait()
                     queued_message_source = queue
                 except asyncio.QueueEmpty:
-                    message_text, queued_message_source = (
+                    outbound_message, queued_message_source = (
                         await self._take_next_topic_message(
                             client_id,
                             ordered_topic_queue,
                             latest_topics,
                         )
                     )
-                    if message_text is None:
+                    if outbound_message is None:
                         sender_event.clear()
                         # No await occurs between clear and this check, but the
                         # recheck protects the wake-up invariant.
@@ -158,8 +222,13 @@ class ConnectionManager:
                         continue
 
                 try:
+                    send_operation = (
+                        websocket.send_bytes
+                        if isinstance(outbound_message, bytes)
+                        else websocket.send_text
+                    )
                     await asyncio.wait_for(
-                        websocket.send_text(message_text),
+                        send_operation(outbound_message),
                         timeout=self.send_timeout,
                     )
                     info = self.connection_info.get(client_id)
@@ -195,17 +264,17 @@ class ConnectionManager:
         if latest_topics:
             self._prefer_latest_topics[client_id] = False
             topic, message = latest_topics.popitem(last=False)
-            message_text = await asyncio.to_thread(
-                _serialize_json_message,
+            outbound_message = await asyncio.to_thread(
+                _serialize_topic_message,
                 message,
             )
-            if len(message_text) > self.max_outbound_message_bytes:
+            if len(outbound_message) > self.max_outbound_message_bytes:
                 logger.warning(
                     "Dropping oversized outbound topic update %s",
                     topic,
                 )
                 return None, None
-            return message_text, None
+            return outbound_message, None
 
         return None, None
 

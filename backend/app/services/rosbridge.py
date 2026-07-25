@@ -843,14 +843,7 @@ class RosbridgeService:
 
             # 记录消息大小信息
             if "data" in msg_dict:
-                if (
-                    isinstance(msg_dict["data"], str)
-                    and msg_dict.get("data_encoding") == "base64"
-                ):
-                    logger.debug(
-                        f"📝 Converted {topic} to dict with Base64 data (original size estimation)"
-                    )
-                elif isinstance(msg_dict["data"], list):
+                if isinstance(msg_dict["data"], list):
                     logger.debug(
                         f"📝 Converted {topic} to dict with {len(msg_dict['data'])} data points"
                     )

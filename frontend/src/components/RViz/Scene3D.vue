@@ -39,6 +39,10 @@ import {
 import { debugLog } from '../../utils/debug'
 import { getThemeColor } from '../../utils/theme'
 import { systemMessage } from '../../composables/useSystemMessage'
+import {
+  createHeightColoredBoxesMaterial,
+  createHeightColoredPointsMaterial
+} from '../../utils/pointCloudMaterial'
 
 export default {
   name: 'Scene3D',
@@ -348,7 +352,12 @@ export default {
         const generation = ++pointCloudGeneration
         pointCloudDecodesInFlight.set(topic, { generation, message })
         try {
-          worker.postMessage({ topic, generation, message })
+          const transferable = ArrayBuffer.isView(message?.data)
+            ? [message.data.buffer]
+            : message?.data instanceof ArrayBuffer
+              ? [message.data]
+              : []
+          worker.postMessage({ topic, generation, message }, transferable)
         } catch (error) {
           pointCloudDecodesInFlight.delete(topic)
           disablePointCloudWorker(error)
@@ -1804,6 +1813,17 @@ export default {
       delete visualization.userData.fixedFrameBaseMatrix
     }
 
+    const updatePointCloudMaterial = (material, opacity) => {
+      const transparent = opacity < 1.0
+      const depthWrite = !transparent
+      const renderStateChanged = material.transparent !== transparent ||
+        material.depthWrite !== depthWrite
+      material.opacity = opacity
+      material.transparent = transparent
+      material.depthWrite = depthWrite
+      if (renderStateChanged) material.needsUpdate = true
+    }
+
     const updateDecodedPointCloud = (topic, message, decoded) => {
       pointCloudUpdateCount++
       if (!decoded || decoded.error || decoded.pointCount <= 0) {
@@ -1816,7 +1836,6 @@ export default {
       const renderStyle = displayConfig.renderStyle === 'boxes' ? 'boxes' : 'points'
       const opacity = persistentSettings.pointcloud.opacity ?? 1.0
       const positions = decoded.positions
-      const colors = decoded.colors
       const pointsProcessed = decoded.pointCount
       const box = pointCloudBounds(decoded)
       const size = box
@@ -1841,12 +1860,7 @@ export default {
             'position',
             new THREE.BufferAttribute(new Float32Array(capacity * 3), 3).setUsage(THREE.DynamicDrawUsage)
           )
-          geometry.setAttribute(
-            'color',
-            new THREE.BufferAttribute(new Float32Array(capacity * 3), 3).setUsage(THREE.DynamicDrawUsage)
-          )
-          const material = new THREE.PointsMaterial({
-            vertexColors: true,
+          const material = createHeightColoredPointsMaterial({
             sizeAttenuation: true
           })
           visualization = new THREE.Points(geometry, material)
@@ -1856,20 +1870,14 @@ export default {
         }
 
         const positionAttribute = visualization.geometry.getAttribute('position')
-        const colorAttribute = visualization.geometry.getAttribute('color')
         positionAttribute.array.set(positions, 0)
-        colorAttribute.array.set(colors, 0)
         positionAttribute.needsUpdate = true
-        colorAttribute.needsUpdate = true
         visualization.geometry.setDrawRange(0, pointsProcessed)
         applyDecodedBounds(visualization.geometry, decoded)
         visualization.material.size = displayConfig.pointSize ||
           persistentSettings.pointcloud.pointSize ||
           Math.max(0.06, size / 300)
-        visualization.material.opacity = opacity
-        visualization.material.transparent = opacity < 1.0
-        visualization.material.depthWrite = opacity >= 1.0
-        visualization.material.needsUpdate = true
+        updatePointCloudMaterial(visualization.material, opacity)
       } else {
         const configuredBoxSize = Number(displayConfig.boxSize)
         const boxSize = Number.isFinite(configuredBoxSize) && configuredBoxSize > 0
@@ -1884,7 +1892,7 @@ export default {
           if (visualization) removeVisualization(topic)
           const capacity = pointCloudCapacity(pointsProcessed)
           const geometry = new THREE.BoxGeometry(boxSize, boxSize, boxSize)
-          const material = new THREE.MeshBasicMaterial({ color: 0xffffff })
+          const material = createHeightColoredBoxesMaterial({ color: 0xffffff })
           visualization = new THREE.InstancedMesh(geometry, material, capacity)
           visualization.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
           visualization.userData.pointCapacity = capacity
@@ -1895,7 +1903,6 @@ export default {
 
         visualization.count = pointsProcessed
         const instanceMatrix = new THREE.Matrix4()
-        const instanceColor = new THREE.Color()
         for (let index = 0; index < pointsProcessed; index++) {
           const offset = index * 3
           instanceMatrix.makeTranslation(
@@ -1904,15 +1911,9 @@ export default {
             positions[offset + 2]
           )
           visualization.setMatrixAt(index, instanceMatrix)
-          instanceColor.setRGB(colors[offset], colors[offset + 1], colors[offset + 2])
-          visualization.setColorAt(index, instanceColor)
         }
         visualization.instanceMatrix.needsUpdate = true
-        if (visualization.instanceColor) visualization.instanceColor.needsUpdate = true
-        visualization.material.opacity = opacity
-        visualization.material.transparent = opacity < 1.0
-        visualization.material.depthWrite = opacity >= 1.0
-        visualization.material.needsUpdate = true
+        updatePointCloudMaterial(visualization.material, opacity)
         visualization.boundingBox = pointCloudBounds(decoded, boxSize / 2)
         if (visualization.boundingBox) {
           const center = visualization.boundingBox.getCenter(new THREE.Vector3())
@@ -1964,7 +1965,6 @@ export default {
         // 创建新的点云几何体
         const geometry = new THREE.BufferGeometry()
         const positions = []
-        const colors = []
         
         let pointsProcessed = 0
         
@@ -1979,22 +1979,6 @@ export default {
           // 如果是 PointCloud2 格式
           if (message.fields && message.data) {
             let dataArray = message.data
-            
-            // 处理Base64编码的数据（ROSBridge通常这样传输）
-            if (typeof message.data === 'string') {
-              if (shouldLog) debugLog('Decoding Base64 data...')
-              try {
-                const binaryString = atob(message.data)
-                dataArray = new Uint8Array(binaryString.length)
-                for (let i = 0; i < binaryString.length; i++) {
-                  dataArray[i] = binaryString.charCodeAt(i)
-                }
-                if (shouldLog) debugLog('Decoded data length:', dataArray.length)
-              } catch (e) {
-                console.error('Base64 decode failed:', e)
-                dataArray = []
-              }
-            }
 
             if (!(dataArray instanceof Uint8Array)) {
               dataArray = new Uint8Array(dataArray)
@@ -2051,12 +2035,6 @@ export default {
                     // 转换：ROS(x,y,z) -> Three.js(x,y,z) 保持不变，因为我们已经旋转了坐标轴
                     positions.push(x, y, z)
                     pointsProcessed++
-
-                    // 根据Z轴高度生成颜色（高程着色）
-                    const normalizedZ = Math.max(0, Math.min(1, (z + 2) / 4)) // 假设z范围-2到2
-                    const hue = (1 - normalizedZ) * 240 / 360 // 从蓝色(低)到红色(高)
-                    const color = new THREE.Color().setHSL(hue, 0.8, 0.6)
-                    colors.push(color.r, color.g, color.b)
                   }
                 } catch (parseError) {
                   // 忽略单个点的解析错误
@@ -2077,7 +2055,6 @@ export default {
                 const z = point.z || 0
                 
                 positions.push(x, y, z)
-                colors.push(Math.random(), Math.random(), Math.random())
                 pointsProcessed++
               }
             }
@@ -2095,7 +2072,6 @@ export default {
         // 创建点云对象
         if (positions.length > 0) {
           geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-          geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
           
           // 计算边界框以调整点的大小
           geometry.computeBoundingBox()
@@ -2120,10 +2096,7 @@ export default {
             const boxGeometry = new THREE.BoxGeometry(boxSize, boxSize, boxSize)
             // RViz 的体素颜色接近无光照的原色显示。MeshBasicMaterial
             // 避免背光面被场景灯光压暗，同时保留立方体深度和遮挡。
-            const boxMaterial = new THREE.MeshBasicMaterial({
-              // InstancedMesh uses instanceColor directly. Enabling vertexColors
-              // would also require a color attribute on BoxGeometry and can
-              // multiply every instance color by the WebGL default (black).
+            const boxMaterial = createHeightColoredBoxesMaterial({
               color: 0xffffff,
               opacity,
               transparent: opacity < 1.0,
@@ -2131,7 +2104,6 @@ export default {
             })
             const boxes = new THREE.InstancedMesh(boxGeometry, boxMaterial, pointsProcessed)
             const instanceMatrix = new THREE.Matrix4()
-            const instanceColor = new THREE.Color()
 
             for (let i = 0; i < pointsProcessed; i++) {
               const offset = i * 3
@@ -2141,20 +2113,16 @@ export default {
                 positions[offset + 2]
               )
               boxes.setMatrixAt(i, instanceMatrix)
-              instanceColor.setRGB(colors[offset], colors[offset + 1], colors[offset + 2])
-              boxes.setColorAt(i, instanceColor)
             }
 
             boxes.instanceMatrix.needsUpdate = true
-            if (boxes.instanceColor) boxes.instanceColor.needsUpdate = true
             boxes.computeBoundingBox()
             boxes.computeBoundingSphere()
             geometry.dispose()
             visualization = boxes
           } else {
-            const material = new THREE.PointsMaterial({
+            const material = createHeightColoredPointsMaterial({
               size: displayConfig.pointSize || persistentSettings.pointcloud.pointSize || Math.max(0.06, size / 300),
-              vertexColors: true,
               sizeAttenuation: true,
               opacity,
               transparent: opacity < 1.0
@@ -3658,14 +3626,13 @@ export default {
               }
               // 强度显示（对3D点云生效）
               if (settings.showIntensity !== undefined && object.isPoints && object.material) {
-                // 直接创建新材质以确保vertexColors变化生效
                 const oldMaterial = object.material
-                const newMaterial = new THREE.PointsMaterial({
+                const newMaterial = createHeightColoredPointsMaterial({
                   size: oldMaterial.size,
-                  vertexColors: settings.showIntensity,
                   sizeAttenuation: oldMaterial.sizeAttenuation,
                   opacity: oldMaterial.opacity,
-                  transparent: oldMaterial.transparent
+                  transparent: oldMaterial.transparent,
+                  depthWrite: oldMaterial.depthWrite
                 })
                 object.material = newMaterial
                 oldMaterial.dispose()
@@ -3689,14 +3656,13 @@ export default {
                 object.material.needsUpdate = true
               }
               if (settings.showIntensity !== undefined && object.isPoints && object.material) {
-                // 直接创建新材质以确保vertexColors变化生效
                 const oldMaterial = object.material
-                const newMaterial = new THREE.PointsMaterial({
+                const newMaterial = createHeightColoredPointsMaterial({
                   size: oldMaterial.size,
-                  vertexColors: settings.showIntensity,
                   sizeAttenuation: oldMaterial.sizeAttenuation,
                   opacity: oldMaterial.opacity,
-                  transparent: oldMaterial.transparent
+                  transparent: oldMaterial.transparent,
+                  depthWrite: oldMaterial.depthWrite
                 })
                 object.material = newMaterial
                 oldMaterial.dispose()

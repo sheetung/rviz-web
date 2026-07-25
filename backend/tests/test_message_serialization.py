@@ -137,13 +137,13 @@ def test_pointcloud_retains_all_points_and_compacts_to_xyz():
 
     result = converter.process_pointcloud(pointcloud)
 
-    assert result["data_encoding"] == "array"
+    assert result["data_encoding"] == "binary"
     assert result["height"] == 1
     assert result["width"] == 10
     assert result["point_step"] == 12
     assert result["row_step"] == 120
     assert [field["name"] for field in result["fields"]] == ["x", "y", "z"]
-    compacted_points = list(struct.iter_unpack("<fff", bytes(result["data"])))
+    compacted_points = list(struct.iter_unpack("<fff", result["data"]))
     assert [point[0] for point in compacted_points] == [
         float(index) for index in range(10)
     ]

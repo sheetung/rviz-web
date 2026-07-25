@@ -6,7 +6,7 @@ self.onmessage = (event) => {
     const decoded = decodePointCloudMessage(message)
     self.postMessage(
       { topic, generation, decoded },
-      [decoded.positions.buffer, decoded.colors.buffer]
+      [decoded.positions.buffer]
     )
   } catch (error) {
     self.postMessage({
@@ -17,7 +17,6 @@ self.onmessage = (event) => {
         pointCount: 0,
         totalPoints: 0,
         positions: new Float32Array(),
-        colors: new Float32Array(),
         bounds: null
       }
     })

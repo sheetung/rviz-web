@@ -60,7 +60,7 @@ RVizWeb 是一个面向 ROS2 的浏览器可视化工具。前端使用 Vue 3、
 | `ROS_PUBLISH_TOPIC_ALLOWLIST` | HTTP/WebSocket 可发布 Topic glob |
 | `ROS_PUBLISH_TYPE_ALLOWLIST` | 可发布 ROS 消息类型 |
 | `ROS_POINTCLOUD_MAX_HZ` | PointCloud2 转发到浏览器的最高频率；`0` 表示不限频 |
-| `ROS_POINTCLOUD_XYZ_ONLY` | 只转发当前点云渲染需要的 XYZ 字段，减少 Base64/JSON 体积 |
+| `ROS_POINTCLOUD_XYZ_ONLY` | 只转发当前点云渲染需要的 XYZ 字段，减少 PointCloud2 二进制载荷 |
 | `CONFIG_MAX_BYTES` | 单个 `.rvizweb` 文件的最大字节数 |
 | `CONFIG_NAME_MAX_LENGTH` | 配置文件名最大长度 |
 | `VITE_DEBUG` | 是否输出前端调试日志 |

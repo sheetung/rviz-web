@@ -7,6 +7,7 @@ import { ref, computed } from 'vue'
 import { debugLog } from '../utils/debug.js'
 import { createWebSocketUrl } from '../utils/websocketUrl.js'
 import { systemMessage } from './useSystemMessage.js'
+import { decodePointCloudBinaryFrame } from '../utils/pointCloudBinary.js'
 
 export const useConnectionStore = defineStore('connection', () => {
   // 连接状态
@@ -85,6 +86,7 @@ export const useConnectionStore = defineStore('connection', () => {
       connectionError.value = null
 
       const socket = new WebSocket(wsUrl.value)
+      socket.binaryType = 'arraybuffer'
       websocket.value = socket
 
       socket.onopen = () => {
@@ -108,11 +110,13 @@ export const useConnectionStore = defineStore('connection', () => {
       
       socket.onmessage = (event) => {
         try {
-          const message = JSON.parse(event.data)
+          const message = typeof event.data === 'string'
+            ? JSON.parse(event.data)
+            : decodePointCloudBinaryFrame(event.data)
           debugLog(`[ConnectionStore] 📨 收到消息:`, message)
           handleMessage(message)
         } catch (error) {
-          console.error('[ConnectionStore] ❌ 解析消息失败:', error, event.data)
+          console.error('[ConnectionStore] ❌ 解析消息失败:', error)
         }
       }
       
