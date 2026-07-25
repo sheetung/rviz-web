@@ -11,7 +11,7 @@ const routes = [
     path: '/',
     name: 'MainLayout',
     component: () => import('../components/layout/MainLayout.vue'),
-    meta: { title: 'RViz2 Web 可视化系统' }
+    meta: { title: 'RViz Web 可视化系统' }
   }
 ]
 

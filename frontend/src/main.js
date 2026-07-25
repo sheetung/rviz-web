@@ -1,6 +1,6 @@
 /**
  * Vue.js 应用入口
- * RViz2 Web 可视化系统
+ * RViz Web 可视化系统
  */
 
 import { createApp } from 'vue'

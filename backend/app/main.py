@@ -1,6 +1,6 @@
 """
 FastAPI 应用入口
-支持 RViz2 Web 可视化系统
+支持 RViz Web 可视化系统
 """
 
 import logging
@@ -30,21 +30,21 @@ DOCS_ASSETS_DIR = Path(__file__).resolve().parent / "static" / "swagger-ui"
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    logger.info("Starting RViz2 Web Visualization System")
+    logger.info("Starting RViz Web Visualization System")
     service = get_rosbridge_service()
     await service.start()
     logger.info("Server started on port %s", settings.backend_port)
     try:
         yield
     finally:
-        logger.info("Shutting down RViz2 Web Visualization System")
+        logger.info("Shutting down RViz Web Visualization System")
         await video.shutdown_video_streams()
         await service.stop()
 
 
 # 创建 FastAPI 应用
 app = FastAPI(
-    title="RViz2 Web Visualization",
+    title="RViz Web Visualization",
     description="基于 Vue.js + FastAPI 的 ROS2 可视化平台",
     version=APP_VERSION,
     docs_url=None,
@@ -90,7 +90,7 @@ async def swagger_ui_html():
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>RViz2 Web Visualization - Swagger UI</title>
+    <title>RViz Web Visualization - Swagger UI</title>
     <link rel="stylesheet" href="/docs-assets/swagger-ui.css">
   </head>
   <body>
@@ -118,7 +118,7 @@ app.include_router(video.router, prefix="/api/v1", tags=["Video"])
 @app.get("/")
 async def root():
     """根路径"""
-    return {"message": "RViz2 Web Visualization System", "version": APP_VERSION}
+    return {"message": "RViz Web Visualization System", "version": APP_VERSION}
 
 
 @app.get("/health")

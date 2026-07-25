@@ -161,7 +161,7 @@ DELETE /api/v1/video/sessions/{session_id}
 Before first use, copy the environment config example and modify as needed:
 
 ```bash
-cd <your_workspace>/rviz2-web
+cd <your_workspace>/rviz-web
 cp .env.example .env
 # Edit .env to adjust ports, ROS_DOMAIN_ID, etc.
 ```

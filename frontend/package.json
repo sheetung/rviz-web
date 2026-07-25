@@ -2,7 +2,7 @@
   "name": "ros-web-viz-frontend",
   "version": "1.2.0",
   "type": "module",
-  "description": "RViz2 Web Visualization Frontend with Vue.js",
+  "description": "RViz Web Visualization Frontend with Vue.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

@@ -1477,7 +1477,7 @@ export default {
       defaultVisualizationTopics.forEach(({ topic, type }) => {
         subscribeToRosTopic(topic, type)
       })
-      systemMessage.success('已加载 RViz2 默认显示配置')
+      systemMessage.success('已加载 RViz 默认显示配置')
     }
 
     const subscribeToTfTopics = () => {
