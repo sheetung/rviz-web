@@ -1,5 +1,7 @@
 # RVizWeb
 
+> Current release: `v1.3.0`
+
 ![RVizWeb](img/1.png)
 
 ![RVizWeb](img/2.png)
