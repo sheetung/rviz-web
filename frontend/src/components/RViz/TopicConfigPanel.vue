@@ -5,19 +5,20 @@
         <div
           class="tree-row global-row"
           :class="{ selected: selectedDisplayId === 'global' }"
-          @click="selectDisplay('global')"
+          @click="toggleGlobalOptions"
         >
-          <span class="tree-caret">▾</span>
+          <span class="tree-caret">{{ globalExpanded ? '▾' : '▸' }}</span>
           <span class="status-dot ok"></span>
           <span class="tree-label">Global Options</span>
           <span class="tree-value">{{ fixedFrame || 'map' }}</span>
         </div>
 
+        <template v-if="globalExpanded">
         <div class="property-row global-property">
           <span>Fixed Frame</span>
           <el-select
             v-model="fixedFrame"
-            filterable
+            :filterable="allowSelectFiltering"
             allow-create
             default-first-option
             placeholder="map"
@@ -37,7 +38,7 @@
           <span>Follow Frame</span>
           <el-select
             v-model="followFrame"
-            filterable
+            :filterable="allowSelectFiltering"
             placeholder="None"
             size="small"
             @change="updateFollowFrame"
@@ -57,13 +58,81 @@
           <span>30</span>
         </div>
 
+        <div class="property-row global-property">
+          <span>Odom Topic</span>
+          <el-select
+            v-model="odomTopic"
+            :filterable="allowSelectFiltering"
+            clearable
+            placeholder="选择 Odom 话题"
+            size="small"
+            @visible-change="onTopicSelectVisibleChange"
+            @change="updateOdomTopic"
+          >
+            <el-option
+              v-for="topic in availableOdomTopics"
+              :key="topic.name"
+              :label="topic.name"
+              :value="topic.name"
+            />
+          </el-select>
+        </div>
+
+        <div class="property-row global-property">
+          <span>无人机模型</span>
+          <el-checkbox
+            v-model="showRobotModel"
+            class="global-toggle"
+            :disabled="!odomTopic"
+            @change="updatePositionSettings"
+          >
+            显示
+          </el-checkbox>
+        </div>
+
+        <div class="property-row global-property">
+          <span>轨迹</span>
+          <el-checkbox
+            v-model="showTrajectory"
+            class="global-toggle"
+            @change="updatePositionSettings"
+          >
+            显示
+          </el-checkbox>
+        </div>
+
+        <div class="property-row global-property">
+          <span>轨迹长度</span>
+          <div class="display-setting-control">
+            <el-slider
+              v-model="trajectoryLength"
+              :min="10"
+              :max="100"
+              :step="1"
+              :disabled="!showTrajectory"
+              @input="updatePositionSettings"
+            />
+            <el-input-number
+              v-model="trajectoryLength"
+              :min="10"
+              :max="100"
+              :step="1"
+              :disabled="!showTrajectory"
+              controls-position="right"
+              size="small"
+              @change="updatePositionSettings"
+            />
+          </div>
+        </div>
+        </template>
+
         <template v-for="display in displayTopics" :key="display.id">
           <div
             class="tree-row display-row"
             :class="{ selected: selectedDisplayId === display.id, disabled: !display.visible }"
-            @click="selectDisplay(display.id)"
+            @click="toggleDisplayExpanded(display)"
           >
-            <span class="tree-caret">{{ selectedDisplayId === display.id ? '▾' : '▸' }}</span>
+            <span class="tree-caret">{{ display.expanded ? '▾' : '▸' }}</span>
             <span
               class="status-dot"
               :class="{ ok: display.visible && !display.error, error: !!display.error, muted: !display.visible }"
@@ -85,14 +154,14 @@
           </div>
 
           <div
-            v-if="selectedDisplayId === display.id"
+            v-if="display.expanded"
             class="property-row display-property"
             @click.stop
           >
             <span>Topic</span>
             <el-select
               v-model="display.name"
-              filterable
+              :filterable="allowSelectFiltering"
               default-first-option
               size="small"
               @focus="rememberDisplayName(display)"
@@ -108,7 +177,7 @@
             </el-select>
           </div>
 
-          <div v-if="selectedDisplayId === display.id && display.error" class="display-error">
+          <div v-if="display.expanded && display.error" class="display-error">
             <span>{{ display.error }}</span>
             <el-button
               v-if="missingTfSourceFrame(display)"
@@ -122,7 +191,7 @@
           </div>
 
           <div
-            v-if="selectedDisplayId === display.id && isPointCloudDisplay(display)"
+            v-if="display.expanded && isPointCloudDisplay(display)"
             class="property-row display-property"
             @click.stop
           >
@@ -138,7 +207,7 @@
           </div>
 
           <div
-            v-if="selectedDisplayId === display.id && isPointCloudDisplay(display) && display.config.renderStyle === 'points'"
+            v-if="display.expanded && isPointCloudDisplay(display) && display.config.renderStyle === 'points'"
             class="property-row display-property"
             @click.stop
           >
@@ -165,7 +234,7 @@
           </div>
 
           <div
-            v-if="selectedDisplayId === display.id && isPointCloudDisplay(display) && display.config.renderStyle === 'boxes'"
+            v-if="display.expanded && isPointCloudDisplay(display) && display.config.renderStyle === 'boxes'"
             class="property-row display-property"
             @click.stop
           >
@@ -192,7 +261,7 @@
           </div>
 
           <div
-            v-if="selectedDisplayId === display.id && isPathDisplay(display)"
+            v-if="display.expanded && isPathDisplay(display)"
             class="property-row display-property"
             @click.stop
           >
@@ -218,7 +287,7 @@
           </div>
 
           <div
-            v-if="selectedDisplayId === display.id && isPathDisplay(display)"
+            v-if="display.expanded && isPathDisplay(display)"
             class="property-row display-property"
             @click.stop
           >
@@ -231,7 +300,7 @@
           </div>
 
           <div
-            v-if="selectedDisplayId === display.id && isMarkerArrayDisplay(display)"
+            v-if="display.expanded && isMarkerArrayDisplay(display)"
             class="property-row display-property"
             @click.stop
           >
@@ -245,7 +314,7 @@
           </div>
 
           <div
-            v-if="selectedDisplayId === display.id && isMarkerArrayDisplay(display)"
+            v-if="display.expanded && isMarkerArrayDisplay(display)"
             class="property-row display-property"
             @click.stop
           >
@@ -348,7 +417,7 @@
           Topic
           <el-select
             v-model="newDisplayTopic"
-            filterable
+            :filterable="allowSelectFiltering"
             allow-create
             default-first-option
             placeholder="选择或输入话题"
@@ -375,13 +444,14 @@
 </template>
 
 <script>
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, watch } from 'vue'
 import { Plus, CopyDocument, Delete, View, Hide } from '@element-plus/icons-vue'
 import { useRosbridge } from '../../composables/useRosbridge'
 import { getThemeColor } from '../../utils/theme'
 import { rosApi } from '../../services/api'
 import { ROS_TOPICS } from '../../config/rosTopics'
 import { systemMessage } from '../../composables/useSystemMessage'
+import { shouldUseNonTypingSelect } from '../../utils/inputCapabilities'
 import {
   sourceFrameFromMissingTfError,
   sourceFramesFromDisplayErrors,
@@ -405,19 +475,36 @@ export default {
     frameIds: {
       type: Array,
       default: () => []
+    },
+    positionSettings: {
+      type: Object,
+      default: () => ({
+        odomTopic: '',
+        showRobotModel: false,
+        showTrajectory: true,
+        trajectoryLength: 100
+      })
     }
   },
   emits: [
     'display-topic-change',
     'fixed-frame-change',
-    'follow-frame-change'
+    'follow-frame-change',
+    'odom-topic-change',
+    'position-settings-change'
   ],
   setup(props, { emit, expose }) {
     const rosbridge = useRosbridge()
+    const allowSelectFiltering = !shouldUseNonTypingSelect()
     const availableTopics = ref([])
     const isLoadingTopics = ref(false)
     const fixedFrame = ref('map')
     const followFrame = ref('')
+    const globalExpanded = ref(true)
+    const odomTopic = ref('')
+    const showRobotModel = ref(false)
+    const showTrajectory = ref(true)
+    const trajectoryLength = ref(100)
     const newDisplayTopic = ref('')
     const newDisplayType = ref('')
     const selectedDisplayId = ref('global')
@@ -463,6 +550,7 @@ export default {
       visible,
       previousName: name,
       error: '',
+      expanded: false,
       config: normalizeDisplayConfig(messageType, config)
     })
     const createDefaultDisplayTopics = () => [
@@ -491,6 +579,9 @@ export default {
           .filter(messageType => messageType && messageType !== 'unknown')
       )].sort((a, b) => a.localeCompare(b))
     })
+    const availableOdomTopics = computed(() =>
+      topicsMatchingMessageType(availableTopics.value, 'nav_msgs/msg/Odometry')
+    )
     const selectableFrameIds = computed(() => [...new Set([
       fixedFrame.value,
       ...props.frameIds,
@@ -546,6 +637,27 @@ export default {
       emit('follow-frame-change', followFrame.value || '')
     }
 
+    const normalizeTrajectoryLength = (value) => {
+      const numericValue = Number(value)
+      return Math.max(10, Math.min(100, Number.isFinite(numericValue) ? Math.round(numericValue) : 100))
+    }
+
+    const updatePositionSettings = () => {
+      trajectoryLength.value = normalizeTrajectoryLength(trajectoryLength.value)
+      emit('position-settings-change', {
+        showRobotModel: Boolean(odomTopic.value && showRobotModel.value),
+        showTrajectory: showTrajectory.value === true,
+        trajectoryLength: trajectoryLength.value
+      })
+    }
+
+    const updateOdomTopic = () => {
+      odomTopic.value = typeof odomTopic.value === 'string' ? odomTopic.value.trim() : ''
+      if (!odomTopic.value) showRobotModel.value = false
+      emit('odom-topic-change', odomTopic.value)
+      updatePositionSettings()
+    }
+
     const emitDisplayTopicChange = (action, display, extra = {}) => {
       emit('display-topic-change', {
         action,
@@ -589,6 +701,7 @@ export default {
         return
       }
       const display = createDisplayTopic(newDisplayTopic.value, newDisplayType.value, true)
+      display.expanded = true
       displayTopics.value.push(display)
       emitDisplayTopicChange('add', display)
       selectedDisplayId.value = display.id
@@ -666,13 +779,20 @@ export default {
       if (!selectedDisplay.value) return
       const source = selectedDisplay.value
       const copy = createDisplayTopic(source.name, source.messageType, source.visible, source.config)
+      copy.expanded = true
       displayTopics.value.push(copy)
       emitDisplayTopicChange(copy.visible ? 'add' : 'hide', copy)
       selectedDisplayId.value = copy.id
     }
 
-    const selectDisplay = (id) => {
-      selectedDisplayId.value = id
+    const toggleGlobalOptions = () => {
+      selectedDisplayId.value = 'global'
+      globalExpanded.value = !globalExpanded.value
+    }
+
+    const toggleDisplayExpanded = (display) => {
+      selectedDisplayId.value = display.id
+      display.expanded = !display.expanded
     }
 
     const displayTypeLabel = (messageType) => {
@@ -741,6 +861,17 @@ export default {
       if (display) display.error = error
     }
 
+    watch(
+      () => props.positionSettings,
+      (settings = {}) => {
+        odomTopic.value = typeof settings.odomTopic === 'string' ? settings.odomTopic : ''
+        showRobotModel.value = settings.showRobotModel === true && Boolean(odomTopic.value)
+        showTrajectory.value = settings.showTrajectory !== false
+        trajectoryLength.value = normalizeTrajectoryLength(settings.trajectoryLength)
+      },
+      { deep: true, immediate: true }
+    )
+
     expose({ applyDisplays, getDisplays, setFixedFrame, setFixedFrameSilently, setFollowFrameSilently, setDisplayStatus })
 
     onMounted(async () => {
@@ -748,10 +879,17 @@ export default {
     })
 
     return {
+      allowSelectFiltering,
       availableTopics,
       availableMessageTypes,
+      availableOdomTopics,
       fixedFrame,
       followFrame,
+      globalExpanded,
+      odomTopic,
+      showRobotModel,
+      showTrajectory,
+      trajectoryLength,
       selectableFrameIds,
       displayTopics,
       selectedDisplay,
@@ -763,7 +901,8 @@ export default {
       createMode,
       newDisplayTopic,
       newDisplayType,
-      selectDisplay,
+      toggleGlobalOptions,
+      toggleDisplayExpanded,
       displayTypeLabel,
       displayLabel,
       isPointCloudDisplay,
@@ -771,6 +910,8 @@ export default {
       isMarkerArrayDisplay,
       updateFixedFrame,
       updateFollowFrame,
+      updateOdomTopic,
+      updatePositionSettings,
       loadAvailableTopics,
       onNewDisplayTopicChange,
       onTopicSelectVisibleChange,
@@ -937,6 +1078,11 @@ export default {
 
 .global-property {
   background: var(--bg-elevated);
+}
+
+.global-toggle {
+  justify-self: start;
+  margin-right: 0;
 }
 
 .property-row.read-only {

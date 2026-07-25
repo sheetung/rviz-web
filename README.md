@@ -45,8 +45,9 @@ RVizWeb 是一个面向 ROS2 的浏览器可视化前端，用于查看点云、
   - Marker/MarkerArray 按 `(ns,id)` 更新，支持 `DELETE`、`DELETEALL`、生命周期以及常用几何类型；未知类型会显示错误，不会伪装成其他几何体。
   - MarkerArray 支持颜色覆盖和透明度设置；颜色留空时使用消息自身颜色。
 - 无人机位姿：
-  - 位置面板中选择 odom 话题作为无人机模型位姿来源。
-  - 内置无人机模型默认隐藏；选择 odom 后可通过“显示无人机模型”复选框启用，并随 `.rvizweb` 配置保存。
+  - 在 Displays 的 `Global Options` 中选择 odom 话题；右侧位姿信息面板只展示当前来源和位姿数值。
+  - 内置无人机模型默认隐藏；选择 odom 后可启用“无人机模型”，并随 `.rvizweb` 配置保存。
+  - 可独立开关轨迹显示并设置保留 10–100 个轨迹点。
   - 关闭内置模型不影响 Marker 或 MarkerArray 中的自定义机器人模型。
   - 当前 odom 订阅会被保护，避免 Displays 隐藏同名话题后无人机模型停止跟随。
 - 期望目标：
@@ -57,6 +58,8 @@ RVizWeb 是一个面向 ROS2 的浏览器可视化前端，用于查看点云、
   - 发布状态实时读取当前 WebSocket 连接，不会因组件初始化时的旧状态误报未连接。
 - 布局与视图：
   - 右侧面板支持手动拖拽高度。
+  - Displays 的 `Global Options` 和每个显示项均可独立展开或收起。
+  - 原“3D控制”面板已移除，位姿和轨迹选项统一归入 `Global Options`。
   - 点云视图和右侧功能区比例可保存。
   - 3D 画布会跟随分栏和底部 Dock 尺寸实时调整，避免拖拽后留下空白区域。
   - 网格、坐标轴、视角预设和相机状态可保存。
@@ -101,7 +104,7 @@ RVIZWEB_CONFIG=<name>.rvizweb ./start.sh local
 
 启动脚本会检查配置文件是否存在以及是否使用 `.rvizweb` 后缀，然后通过 `VITE_RVIZWEB_CONFIG` 交给前端自动读取。
 
-保存配置采用同目录临时文件原子替换，覆盖和删除前的副本保存在 `rvizweb_configs/backups/`。后端会校验配置版本、结构、文件名和大小；配置读取失败时前端保持当前状态不变。
+保存配置采用同目录临时文件原子替换，覆盖和删除前的副本保存在 `rvizweb_configs/backups/`。后端会校验配置版本、结构、文件名和大小；读取旧配置时会自动迁移历史字段、移除已废弃的 3D 控制面板布局字段，并在修改前创建备份。无法识别的旧顶层字段会保存在 `extensions.legacy`，配置读取失败时前端保持当前状态不变。
 
 右上角系统状态会显示当前加载的 `.rvizweb` 文件名、是否存在未保存修改以及配置文件的最近保存时间。设置、Displays、布局和相机视角变化都会更新该状态；保存或重新读取成功后恢复为“已保存”。
 
@@ -131,6 +134,9 @@ RVIZWEB_CONFIG=<name>.rvizweb ./start.sh local
 - `goal.topic`
 - `goal.x/y/z`
 - `position.odomTopic`
+- `position.showRobotModel`
+- `position.showTrajectory`
+- `position.trajectoryLength`
 - `laser`
 - `map`
 - `displays`

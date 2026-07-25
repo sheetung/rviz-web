@@ -1,40 +1,13 @@
 <template>
   <div class="position-panel">
-    <div class="odom-selector">
-      <div
-        class="odom-label"
-        :class="positionStatusClass"
-        :title="positionStatusText"
-        :aria-label="positionStatusText"
-      >
-        <span class="status-dot" aria-hidden="true"></span>
-        <span class="label">Odom:</span>
-      </div>
-      <el-select
-        v-model="selectedOdomTopic"
-        filterable
-        size="small"
-        placeholder="选择 odom 话题"
-        @visible-change="onOdomSelectVisibleChange"
-        @change="onOdomTopicChange"
-      >
-        <el-option
-          v-for="topic in availableOdomTopics"
-          :key="topic.name"
-          :label="topic.name"
-          :value="topic.name"
-        />
-      </el-select>
-    </div>
-
-    <div class="model-toggle">
-      <el-checkbox
-        :model-value="showRobotModel"
-        :disabled="!selectedOdomTopic"
-        @change="onRobotModelVisibleChange"
-      >
-        显示无人机模型
-      </el-checkbox>
+    <div
+      class="position-source"
+      :class="positionStatusClass"
+      :title="positionStatusText"
+      :aria-label="positionStatusText"
+    >
+      <span class="status-dot" aria-hidden="true"></span>
+      <span>{{ currentOdomTopic || '未选择 Odom 话题' }}</span>
     </div>
 
     <div class="position-info compact">
@@ -64,10 +37,9 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onUnmounted, watch } from 'vue'
 import { useRosbridge } from '../../composables/useRosbridge'
 import { useConnectionStore } from '../../composables/useConnectionStore'
-import { rosApi } from '../../services/api'
 
 export default {
   name: 'PosePanel',
@@ -75,19 +47,11 @@ export default {
     currentOdomTopic: {
       type: String,
       default: ''
-    },
-    showRobotModel: {
-      type: Boolean,
-      default: false
     }
   },
-  emits: ['odom-topic-change', 'robot-model-visible-change'],
-  setup(props, { emit }) {
+  setup(props) {
     const rosbridge = useRosbridge()
     const connectionStore = useConnectionStore()
-    const selectedOdomTopic = ref(props.currentOdomTopic || '')
-    const availableTopics = ref([])
-    const isLoadingTopics = ref(false)
 
     const positionData = ref({
       x: 0.0,
@@ -128,10 +92,6 @@ export default {
     })
 
     const subscriptions = []
-
-    const availableOdomTopics = computed(() =>
-      availableTopics.value.filter(topic => topic.messageType.includes('Odometry'))
-    )
 
     const toNumber = (value, fallback = 0) => {
       const number = Number(value)
@@ -224,7 +184,7 @@ export default {
         return
       }
 
-      const topic = selectedOdomTopic.value
+      const topic = props.currentOdomTopic || ''
       if (!topic) {
         positionData.value.status = 'NO_DATA'
         positionData.value.sourceTopic = ''
@@ -256,62 +216,6 @@ export default {
       }
     }
 
-    const normalizeTopicList = (topicList = [], topicTypes = {}) => {
-      return topicList.map(topicInfo => {
-        const topicName = typeof topicInfo === 'string' ? topicInfo : topicInfo.name
-        const messageType = typeof topicInfo === 'string'
-          ? topicTypes[topicName]
-          : (topicInfo.messageType || topicInfo.message_type || topicTypes[topicName])
-        return {
-          name: topicName,
-          messageType: messageType || 'unknown'
-        }
-      })
-        .filter(topic => topic.name)
-        .sort((a, b) => a.name.localeCompare(b.name))
-    }
-
-    const loadAvailableTopics = async () => {
-      if (isLoadingTopics.value) return
-      isLoadingTopics.value = true
-      try {
-        const topicList = await rosApi.getTopics()
-        availableTopics.value = normalizeTopicList(topicList)
-      } catch (error) {
-        console.warn('[PositionPanel] HTTP加载话题失败，回退到websocket:', error)
-        try {
-          const [topicList, topicTypes] = await Promise.all([
-            rosbridge.getTopics(),
-            rosbridge.getTopicTypes()
-          ])
-          availableTopics.value = normalizeTopicList(topicList, topicTypes)
-        } catch (wsError) {
-          console.error('[PositionPanel] 加载话题列表失败:', wsError)
-        }
-      } finally {
-        isLoadingTopics.value = false
-      }
-    }
-
-    const onOdomSelectVisibleChange = (visible) => {
-      if (visible) {
-        loadAvailableTopics()
-      }
-    }
-
-    const onOdomTopicChange = (topic) => {
-      selectedOdomTopic.value = topic || ''
-      emit('odom-topic-change', selectedOdomTopic.value)
-      clearPositionSubscriptions()
-      positionData.value.status = selectedOdomTopic.value ? 'NO_DATA' : 'INACTIVE'
-      positionData.value.sourceTopic = ''
-      subscribeToPosition()
-    }
-
-    const onRobotModelVisibleChange = (visible) => {
-      emit('robot-model-visible-change', visible === true)
-    }
-
     const stopConnectionWatch = watch(
       () => connectionStore.isConnected,
       (isConnected) => {
@@ -329,16 +233,12 @@ export default {
     const stopTopicWatch = watch(
       () => props.currentOdomTopic,
       (topic) => {
-        if ((topic || '') === selectedOdomTopic.value) return
-        selectedOdomTopic.value = topic || ''
         clearPositionSubscriptions()
+        positionData.value.status = topic ? 'NO_DATA' : 'INACTIVE'
+        positionData.value.sourceTopic = ''
         subscribeToPosition()
       }
     )
-
-    onMounted(() => {
-      loadAvailableTopics()
-    })
 
     onUnmounted(() => {
       console.log('[PosePanel] 组件卸载 - 清理所有订阅')
@@ -349,13 +249,8 @@ export default {
 
     return {
       positionData,
-      selectedOdomTopic,
-      availableOdomTopics,
       positionStatusClass,
-      positionStatusText,
-      onOdomSelectVisibleChange,
-      onOdomTopicChange,
-      onRobotModelVisibleChange
+      positionStatusText
     }
   }
 }
@@ -405,31 +300,21 @@ export default {
   display: none;
 }
 
-.odom-selector {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 8px;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.odom-label {
+.position-source {
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 6px;
-}
-
-.model-toggle {
-  display: flex;
-  justify-content: flex-end;
-  min-height: 24px;
-  margin: -4px 0 6px;
-}
-
-.model-toggle :deep(.el-checkbox) {
-  height: 24px;
-  margin-right: 0;
+  margin-bottom: 8px;
+  overflow: hidden;
+  color: var(--text-secondary);
   font-size: 12px;
+}
+
+.position-source span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .info-row {

@@ -43,6 +43,7 @@ import {
   createHeightColoredBoxesMaterial,
   createHeightColoredPointsMaterial
 } from '../../utils/pointCloudMaterial'
+import { poseDampingAlpha } from '../../utils/poseSmoothing'
 
 export default {
   name: 'Scene3D',
@@ -178,6 +179,7 @@ export default {
     // 场景对象
     let gridHelper = null
     let axesHelper = null
+    let coordinateLabels = null
     let ambientLight = null
     let directionalLight = null
     
@@ -372,6 +374,29 @@ export default {
       schedulePointCloudFlush()
     }
 
+    const refreshPointClouds = () => {
+      const topics = []
+      rosSubscriptions.forEach((subscription, topic) => {
+        if ((subscription.messageType || '').includes('PointCloud2')) {
+          topics.push(topic)
+        }
+      })
+
+      topics.forEach(topic => {
+        pendingPointClouds.delete(topic)
+        pointCloudDecodesInFlight.delete(topic)
+        removeVisualization(topic)
+        setDisplayStatus(topic)
+      })
+
+      if (topics.length === 0) {
+        systemMessage.info('当前没有已订阅的点云话题')
+      } else {
+        systemMessage.success(`已刷新 ${topics.length} 个点云显示，等待下一帧`)
+      }
+      return topics.length
+    }
+
     const refreshMarkerTransforms = (topic) => {
       const group = visualizationObjects.get(topic)
       if (!group?.userData?.markerGroup) return
@@ -487,6 +512,45 @@ export default {
 
     // 轨迹记录（用于里程计）
     let trajectoryPoints = []
+    const robotPoseTarget = {
+      position: new THREE.Vector3(),
+      orientation: new THREE.Quaternion()
+    }
+    let robotPoseInitialized = false
+    let lastRobotPoseUpdate = 0
+    const ROBOT_POSITION_SMOOTHING_MS = 70
+    const ROBOT_ORIENTATION_SMOOTHING_MS = 85
+    const ROBOT_POSE_RECONNECT_SNAP_MS = 5000
+
+    const updateGlobalTrajectory = () => {
+      if (!scene) return
+
+      const existingTrajectory = scene.children.find(
+        child => child.userData?.type === 'global_trajectory'
+      )
+      if (trajectoryPoints.length < 2) {
+        if (existingTrajectory) existingTrajectory.visible = false
+        return
+      }
+
+      const geometry = new THREE.BufferGeometry().setFromPoints(trajectoryPoints)
+      if (existingTrajectory) {
+        existingTrajectory.geometry?.dispose()
+        existingTrajectory.geometry = geometry
+        existingTrajectory.visible = persistentSettings.position.showTrajectory
+        return
+      }
+
+      const material = new THREE.LineBasicMaterial({
+        color: 0xff0000,
+        transparent: false,
+        linewidth: 6
+      })
+      const trajectoryLine = new THREE.Line(geometry, material)
+      trajectoryLine.userData = { type: 'global_trajectory' }
+      trajectoryLine.visible = persistentSettings.position.showTrajectory
+      scene.add(trajectoryLine)
+    }
 
     // 导航工具状态
     let currentNavigationTool = 'move'
@@ -624,6 +688,9 @@ export default {
      */
     const createCoordinateSystemLabels = () => {
       try {
+        coordinateLabels = new THREE.Group()
+        coordinateLabels.userData = { type: 'coordinate_labels' }
+
         // 为每个标签创建独立的canvas
         const createLabelSprite = (text, color, position) => {
           const canvas = document.createElement('canvas')
@@ -654,15 +721,17 @@ export default {
 
         // X轴标签 (红色) - 水平方向
         const xSprite = createLabelSprite('X', getThemeColor('--axis-x'), new THREE.Vector3(2.5, 0, 0))
-        scene.add(xSprite)
+        coordinateLabels.add(xSprite)
 
         // Y轴标签 (绿色) - 向上方向
         const ySprite = createLabelSprite('Y', getThemeColor('--axis-y'), new THREE.Vector3(0, 2.5, 0))
-        scene.add(ySprite)
+        coordinateLabels.add(ySprite)
 
         // Z轴标签 (蓝色) - 深度方向
         const zSprite = createLabelSprite('Z', getThemeColor('--axis-z'), new THREE.Vector3(0, 0, 2.5))
-        scene.add(zSprite)
+        coordinateLabels.add(zSprite)
+
+        scene.add(coordinateLabels)
 
         debugLog('坐标系标签已创建')
         debugLog('- X轴 (红色): 水平向右')
@@ -759,18 +828,32 @@ export default {
         const y = Number(position.y ?? 0)
         const z = Number(position.z ?? 0)
 
-        robotModel.position.set(x, y, z)
+        robotPoseTarget.position.set(x, y, z)
 
-        // 更新方向，支持下划线前缀
+        // 更新方向，支持下划线前缀并归一化有效四元数
         if (orientation) {
-          robotModel.quaternion.set(
+          robotPoseTarget.orientation.set(
             Number(orientation.x ?? 0),
             Number(orientation.y ?? 0),
             Number(orientation.z ?? 0),
             Number(orientation.w ?? 1)
           )
+          if (robotPoseTarget.orientation.lengthSq() > 0) {
+            robotPoseTarget.orientation.normalize()
+          } else {
+            robotPoseTarget.orientation.identity()
+          }
+        } else if (!robotPoseInitialized) {
+          robotPoseTarget.orientation.copy(robotModel.quaternion)
         }
 
+        const now = performance.now()
+        if (!robotPoseInitialized || now - lastRobotPoseUpdate > ROBOT_POSE_RECONNECT_SNAP_MS) {
+          robotModel.position.copy(robotPoseTarget.position)
+          robotModel.quaternion.copy(robotPoseTarget.orientation)
+          robotPoseInitialized = true
+        }
+        lastRobotPoseUpdate = now
         robotModel.userData.lastUpdate = Date.now()
         // debugLog(`[updateRobotPosition] 机器人位置更新: (${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)})`)
 
@@ -792,35 +875,22 @@ export default {
             }
 
             // 创建或更新轨迹线
-            if (trajectoryPoints.length > 1) {
-              // 清除之前的独立轨迹线
-              const existingTrajectory = scene.children.find(child => child.userData?.type === 'global_trajectory')
-              if (existingTrajectory) {
-                scene.remove(existingTrajectory)
-                existingTrajectory.geometry?.dispose()
-                existingTrajectory.material?.dispose()
-              }
-
-              // 创建新的全局轨迹线
-              const globalTrajectoryGeometry = new THREE.BufferGeometry().setFromPoints(trajectoryPoints)
-              const globalTrajectoryMaterial = new THREE.LineBasicMaterial({
-                color: 0xff0000,  // 红色全局轨迹
-                transparent: false,
-                linewidth: 6
-              })
-              const globalTrajectoryLine = new THREE.Line(globalTrajectoryGeometry, globalTrajectoryMaterial)
-              globalTrajectoryLine.userData = { type: 'global_trajectory' }
-              globalTrajectoryLine.visible = true
-
-              scene.add(globalTrajectoryLine)
-              // debugLog(`[Trajectory-Robot] 创建全局轨迹线，点数: ${trajectoryPoints.length}`)
-            }
+            updateGlobalTrajectory()
           }
         }
 
       } catch (error) {
         console.warn('更新机器人位置失败:', error)
       }
+    }
+
+    const updateRobotPoseAnimation = (deltaMilliseconds) => {
+      if (!robotModel || !robotPoseInitialized) return
+
+      const positionAlpha = poseDampingAlpha(deltaMilliseconds, ROBOT_POSITION_SMOOTHING_MS)
+      const orientationAlpha = poseDampingAlpha(deltaMilliseconds, ROBOT_ORIENTATION_SMOOTHING_MS)
+      robotModel.position.lerp(robotPoseTarget.position, positionAlpha)
+      robotModel.quaternion.slerp(robotPoseTarget.orientation, orientationAlpha)
     }
 
     /**
@@ -885,6 +955,10 @@ export default {
      */
     const animate = (currentTime = 0) => {
       animationId = requestAnimationFrame(animate)
+      const elapsedMilliseconds = lastTime > 0 ? Math.max(0, currentTime - lastTime) : 0
+      const deltaMilliseconds = Math.min(elapsedMilliseconds, 100)
+
+      updateRobotPoseAnimation(deltaMilliseconds)
       
       // 更新控制器
       if (controls) {
@@ -902,17 +976,19 @@ export default {
       
       // 计算 FPS
       frameCount++
-      fpsTime += currentTime - lastTime
+      fpsTime += elapsedMilliseconds
       lastTime = currentTime
-      
+
+      let shouldUpdateSceneStats = false
       if (fpsTime >= 1000) {
         performanceStats.value.fps = Math.round((frameCount * 1000) / fpsTime)
         frameCount = 0
         fpsTime = 0
+        shouldUpdateSceneStats = true
       }
       
-      // 更新对象和顶点数
-      if (scene) {
+      // 场景统计不参与渲染，只需每秒更新一次，避免高点数场景逐帧遍历。
+      if (scene && shouldUpdateSceneStats) {
         let objectCount = 0
         let vertexCount = 0
         
@@ -1013,7 +1089,21 @@ export default {
     }
 
     const setPositionOdomTopic = (topic) => {
-      positionOdomTopic = typeof topic === 'string' ? topic.trim() : ''
+      const nextTopic = typeof topic === 'string' ? topic.trim() : ''
+      if (nextTopic !== positionOdomTopic) {
+        robotPoseInitialized = false
+        lastRobotPoseUpdate = 0
+        trajectoryPoints.length = 0
+        const trajectoryLine = scene?.children.find(
+          child => child.userData?.type === 'global_trajectory'
+        )
+        if (trajectoryLine) {
+          scene.remove(trajectoryLine)
+          trajectoryLine.geometry?.dispose()
+          trajectoryLine.material?.dispose()
+        }
+      }
+      positionOdomTopic = nextTopic
       if (!positionOdomTopic && robotModel) {
         robotModel.visible = false
       }
@@ -1224,7 +1314,8 @@ export default {
             if (import.meta.env.DEV) addDebugInfo()
             break
           case 'r':
-            resetCamera()
+            event.preventDefault()
+            refreshPointClouds()
             break
           case 'c':
             if (import.meta.env.DEV) checkSubscriptionStatus()
@@ -1266,6 +1357,9 @@ export default {
     const setAxesVisible = (visible) => {
       if (axesHelper) {
         axesHelper.visible = visible
+      }
+      if (coordinateLabels) {
+        coordinateLabels.visible = visible
       }
     }
 
@@ -3229,6 +3323,7 @@ export default {
           })
         }
       })
+      updateGlobalTrajectory()
     }
 
     const updateTrajectoryLength = (newLength) => {
@@ -3702,23 +3797,21 @@ export default {
           if (settings.showRobotModel !== undefined) {
             setRobotModelVisible(settings.showRobotModel)
           }
-          visualizationObjects.forEach((object) => {
-            // 轨迹显示
-            if (settings.showTrajectory !== undefined) {
-              if (object.userData?.type === 'robot_pose') {
-                // 查找轨迹线子对象
-                object.children.forEach(child => {
-                  if (child.userData?.type === 'trajectory') {
-                    child.visible = settings.showTrajectory
-                  }
-                })
-              }
+          if (settings.showTrajectory !== undefined) {
+            persistentSettings.position.showTrajectory = settings.showTrajectory === true
+            const trajectoryLine = scene?.children.find(
+              child => child.userData?.type === 'global_trajectory'
+            )
+            if (trajectoryLine) {
+              trajectoryLine.visible = persistentSettings.position.showTrajectory
+            } else if (persistentSettings.position.showTrajectory) {
+              updateGlobalTrajectory()
             }
-          })
-          debugLog('位置设置已更新:', settings)
+          }
           if (settings.trajectoryLength !== undefined) {
             // 更新轨迹长度（夹取到10~100）
             const clamped = Math.max(10, Math.min(100, settings.trajectoryLength))
+            persistentSettings.position.trajectoryLength = clamped
             updateTrajectoryLength(clamped)
           }
           debugLog('位置设置已更新:', settings)
@@ -4590,6 +4683,7 @@ export default {
       // ROS集成方法
       subscribeToRosTopic,
       subscribeToDefaultVisualizationTopics,
+      refreshPointClouds,
       unsubscribeFromRosTopic,
       updateVisualization,
       removeVisualization,

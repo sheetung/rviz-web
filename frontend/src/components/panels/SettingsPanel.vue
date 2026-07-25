@@ -109,6 +109,7 @@ export default {
     'odom-topic-change',
     'settings-update',
     'capture-scene-state',
+    'config-saved',
     'display-config-apply',
     'fixed-frame-change',
     'follow-frame-change'
@@ -119,6 +120,7 @@ export default {
     const configName = ref(startupConfigName)
     const selectedConfigName = ref(startupConfigName)
     const configFiles = ref([])
+    const loadedExtensions = ref({})
 
     const configSummary = computed(() => ({
       fixedFrame: props.settingsSnapshot.fixedFrame || 'map',
@@ -157,6 +159,7 @@ export default {
 
     const buildConfig = () => ({
       ...props.settingsSnapshot,
+      extensions: JSON.parse(JSON.stringify(loadedExtensions.value || {})),
       displays: props.displaySnapshot.map(display => ({
         name: display.name,
         messageType: display.messageType,
@@ -181,11 +184,15 @@ export default {
 
     const applyConfig = (config) => {
       const cfg = config || {}
+      loadedExtensions.value = cfg.extensions && typeof cfg.extensions === 'object'
+        ? JSON.parse(JSON.stringify(cfg.extensions))
+        : {}
       emit('fixed-frame-change', cfg.fixedFrame || 'map')
       emit('follow-frame-change', cfg.followFrame || '')
 
       emit('settings-update', {
         type: 'scene',
+        source: 'config',
         showGrid: cfg.scene?.showGrid !== false,
         showAxes: cfg.scene?.showAxes !== false,
         viewPreset: cfg.scene?.viewPreset || 'iso',
@@ -226,11 +233,6 @@ export default {
         showTrajectory: position.showTrajectory !== false,
         trajectoryLength: position.trajectoryLength || 100
       })
-      emit('settings-update', {
-        type: 'trajectory',
-        trajectoryLength: position.trajectoryLength || 100
-      })
-
       const laser = cfg.laser || {}
       emit('laser-type-change', laser.laserType || '3d')
       emit('laser2d-change', typeof laser.laserScanTopic === 'string' ? laser.laserScanTopic : '')
@@ -292,6 +294,7 @@ export default {
         configName.value = name
         selectedConfigName.value = name
         configStatusStore.markSaved(name, config, result.modified_at)
+        emit('config-saved', config)
         await loadConfigFiles()
         systemMessage.success(`配置已保存: ${name}`)
       } catch (error) {
@@ -309,7 +312,13 @@ export default {
         configName.value = loadedName
         await nextTick()
         configStatusStore.markLoaded(loadedName, buildConfig(), data.modified_at)
-        systemMessage.success(`配置已读取: ${selectedConfigName.value}`)
+        if (data.repaired) {
+          systemMessage.success(
+            `配置已读取并自动修复 ${data.repairs?.length || 1} 项: ${selectedConfigName.value}`
+          )
+        } else {
+          systemMessage.success(`配置已读取: ${selectedConfigName.value}`)
+        }
       } catch (error) {
         const message = systemMessage.getErrorMessage(error, '读取配置失败')
         systemMessage.error(`${message}，当前界面未修改`)

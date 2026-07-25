@@ -11,36 +11,25 @@
                   <el-icon :size="14"><VideoCamera /></el-icon>
                   <kbd>M</kbd>
                 </el-button>
-                <el-button size="small" :type="activeSceneTool === 'select' ? 'primary' : 'default'" title="选择 (S)" @click="activateSceneTool('select')" class="tool-btn">
-                  <el-icon :size="14"><Aim /></el-icon>
-                  <kbd>S</kbd>
-                </el-button>
-                <el-button size="small" title="聚焦选中对象 (F)" @click="focusSelectedObject" class="tool-btn">
-                  <el-icon :size="14"><Search /></el-icon>
-                  <kbd>F</kbd>
-                </el-button>
-                <el-button size="small" :type="activeSceneTool === '2d_pose' ? 'primary' : 'default'" title="2D 位姿估计 (P)" @click="activateSceneTool('2d_pose')" class="tool-btn">
-                  <el-icon :size="14"><MapLocation /></el-icon>
-                  <kbd>P</kbd>
-                </el-button>
                 <el-button size="small" :type="activeSceneTool === '2d_goal' ? 'primary' : 'default'" title="2D 目标 (G)" @click="activateSceneTool('2d_goal')" class="tool-btn">
                   <el-icon :size="14"><Flag /></el-icon>
                   <kbd>G</kbd>
                 </el-button>
               </div>
               <span class="tool-separator"></span>
-              <div class="tool-group">
-                <el-button size="small" title="重置视角 (R)" @click="resetView" class="tool-btn">
+              <div class="tool-group view-tool-group">
+                <el-button size="small" title="刷新点云 (R)" @click="refreshPointClouds" class="tool-btn joined-tool-first">
                   <el-icon :size="14"><Refresh /></el-icon>
+                  <kbd>R</kbd>
                 </el-button>
-                <el-button size="small" @click="toggleGrid" :type="sceneShowGrid ? 'primary' : 'default'" class="tool-btn" title="切换网格">
+                <el-button size="small" @click="toggleGrid" :type="sceneShowGrid ? 'primary' : 'default'" class="tool-btn joined-tool-middle" title="切换网格">
                   <el-icon :size="14"><Grid /></el-icon>
                 </el-button>
-                <el-button size="small" @click="toggleAxes" :type="sceneShowAxes ? 'primary' : 'default'" class="tool-btn" title="切换坐标轴">
+                <el-button size="small" @click="toggleAxes" :type="sceneShowAxes ? 'primary' : 'default'" class="tool-btn joined-tool-middle" title="切换坐标轴">
                   <el-icon :size="14"><Connection /></el-icon>
                 </el-button>
                 <el-dropdown trigger="click" @command="setSceneViewPreset">
-                  <el-button size="small" class="tool-btn" title="视角预设">
+                  <el-button size="small" class="tool-btn joined-tool-last" title="视角预设">
                     <el-icon :size="14"><View /></el-icon>
                     <el-icon class="dropdown-caret"><ArrowDown /></el-icon>
                   </el-button>
@@ -49,6 +38,7 @@
                       <el-dropdown-item command="top">俯视图</el-dropdown-item>
                       <el-dropdown-item command="side">侧视图</el-dropdown-item>
                       <el-dropdown-item command="iso">等距图</el-dropdown-item>
+                      <el-dropdown-item command="configured" divided>重置为配置视角</el-dropdown-item>
                     </el-dropdown-menu>
                   </template>
                 </el-dropdown>
@@ -204,11 +194,7 @@
             :style="getSidePanelStyle('gps')"
           >
             <GpsPanel
-              :compact="true"
               :current-odom-topic="settingsSnapshot.position.odomTopic"
-              :show-robot-model="settingsSnapshot.position.showRobotModel"
-              @odom-topic-change="onOdomTopicChange"
-              @robot-model-visible-change="onRobotModelVisibleChange"
             />
           </WorkbenchPanel>
           <div
@@ -251,9 +237,12 @@
               ref="topicConfigRef"
               :displays="displaySnapshot"
               :frame-ids="availableFrameIds"
+              :position-settings="settingsSnapshot.position"
               @display-topic-change="onDisplayTopicChange"
               @fixed-frame-change="onFixedFrameChange"
               @follow-frame-change="onFollowFrameChange"
+              @odom-topic-change="onOdomTopicChange"
+              @position-settings-change="onPositionSettingsChange"
             />
           </WorkbenchPanel>
           <div
@@ -283,42 +272,10 @@
               @odom-topic-change="onOdomTopicChange"
               @settings-update="onSettingsUpdate"
               @capture-scene-state="captureSceneState"
+              @config-saved="onConfigSaved"
               @display-config-apply="onDisplayConfigApply"
               @fixed-frame-change="onConfigFixedFrameChange"
               @follow-frame-change="onConfigFollowFrameChange"
-            />
-          </WorkbenchPanel>
-          <div
-            v-show="!settingsCollapsed"
-            class="side-panel-resize-handle"
-            @mousedown="startSidePanelResize($event, 'settings')"
-            @touchstart="startSidePanelResize($event, 'settings')"
-          >
-            <span></span>
-          </div>
-
-          <WorkbenchPanel
-            id="controller"
-            title="3D控制"
-            panel-class="controller-mini-panel"
-            :style="getSidePanelStyle('controller')"
-            collapsible
-            :collapsed="controllerCollapsed"
-            @update:collapsed="setPanelCollapsed('controller', $event)"
-          >
-            <Scene3DController
-              :compact="true"
-              :current-odom-topic="settingsSnapshot.position.odomTopic"
-              @laser-type-change="onLaserTypeChange"
-              @laser2d-change="onLaser2DChange"
-              @pointcloud-change="onPointCloudChange"
-              @map-topic-change="onMapTopicChange"
-              @map-file-change="onMapFileChange"
-              @map-files-change="onMapFilesChange"
-              @odom-topic-change="onOdomTopicChange"
-              @settings-update="onSettingsUpdate"
-              @camera-reset="onCameraReset"
-              @view-preset="onViewPreset"
             />
           </WorkbenchPanel>
         </div>
@@ -330,14 +287,13 @@
 <script>
 import { ref, nextTick, defineAsyncComponent, onBeforeUnmount } from 'vue'
 import {
-  ArrowDown, Aim, Search, Refresh, View, VideoCamera, VideoPause, Camera, MapLocation, Flag, DataAnalysis, Grid, Connection, Monitor
+  ArrowDown, Refresh, View, VideoCamera, VideoPause, Camera, Flag, DataAnalysis, Grid, Connection, Monitor
 } from '@element-plus/icons-vue'
 
 // 引入面板组件
 import Scene3D from '../RViz/Scene3D.vue'
 import RtspVideoOverlay from '../RViz/RtspVideoOverlay.vue'
 import GpsPanel from '../panels/GpsPanel.vue'
-import Scene3DController from '../RViz/Scene3DController.vue'
 import TopicConfigPanel from '../RViz/TopicConfigPanel.vue'
 import WorkbenchPanel from './WorkbenchPanel.vue'
 import ChartPanel from '../panels/ChartPanel.vue'
@@ -347,13 +303,13 @@ import { getThemeColor } from '../../utils/theme'
 import { videoApi } from '../../services/api'
 import { sanitizeRtspUrlForStorage } from '../../utils/rtspUrl'
 import { systemMessage } from '../../composables/useSystemMessage'
+import { cloneCameraState } from '../../utils/cameraState'
 
 const DEFAULT_SIDE_PANEL_HEIGHTS = {
   gps: 220,
   goal: 220,
   topics: 560,
   settings: 360,
-  controller: 520,
   chart: 300
 }
 
@@ -362,7 +318,6 @@ const SIDE_PANEL_MIN_HEIGHTS = {
   goal: 180,
   topics: 320,
   settings: 260,
-  controller: 320,
   chart: 220
 }
 
@@ -370,14 +325,11 @@ export default {
   name: 'MainLayout',
   components: {
     ArrowDown,
-    Aim,
-    Search,
     Refresh,
     View,
     VideoCamera,
     VideoPause,
     Camera,
-    MapLocation,
     Flag,
     DataAnalysis,
     Grid,
@@ -386,7 +338,6 @@ export default {
     Scene3D,
     RtspVideoOverlay,
     GpsPanel,
-    Scene3DController,
     TopicConfigPanel,
     WorkbenchPanel,
     ChartPanel,
@@ -408,8 +359,9 @@ export default {
     const rtspStreamUrl = ref('')
     const isSceneRecording = ref(false)
     const settingsCollapsed = ref(true)
-    const controllerCollapsed = ref(true)
     let rtspConnectAttempt = 0
+    let configuredCameraState = null
+    let configuredViewPreset = 'iso'
 
     // 传统布局控制状态
     const sceneWidth = ref(68)
@@ -439,8 +391,7 @@ export default {
         sceneWidth: 68,
         panelHeights: { ...DEFAULT_SIDE_PANEL_HEIGHTS },
         collapsedPanels: {
-          settings: true,
-          controller: true
+          settings: true
         }
       },
       appearance: {
@@ -506,7 +457,6 @@ export default {
     const setPanelCollapsed = (panelId, collapsed) => {
       const nextCollapsed = collapsed === true
       if (panelId === 'settings') settingsCollapsed.value = nextCollapsed
-      if (panelId === 'controller') controllerCollapsed.value = nextCollapsed
       settingsSnapshot.value.layout.collapsedPanels = {
         ...settingsSnapshot.value.layout.collapsedPanels,
         [panelId]: nextCollapsed
@@ -662,10 +612,31 @@ export default {
     
     // 3D场景控制方法
     
-    const resetView = () => {
-      if (scene3dRef.value) {
-        scene3dRef.value.resetCamera()
+    const rememberConfiguredView = (sceneConfig = {}) => {
+      configuredCameraState = cloneCameraState(sceneConfig.camera)
+      configuredViewPreset = ['top', 'side', 'iso'].includes(sceneConfig.viewPreset)
+        ? sceneConfig.viewPreset
+        : 'iso'
+    }
+
+    const resetViewFromConfig = () => {
+      const cameraState = cloneCameraState(configuredCameraState)
+      if (cameraState && scene3dRef.value?.applyCameraState) {
+        scene3dRef.value.applyCameraState(cameraState)
+        settingsSnapshot.value.scene.camera = cloneCameraState(cameraState)
+        settingsSnapshot.value.scene.viewPreset = configuredViewPreset
+        systemMessage.info('已恢复配置文件中的相机视角')
+        return
       }
+
+      settingsSnapshot.value.scene.camera = null
+      settingsSnapshot.value.scene.viewPreset = configuredViewPreset
+      scene3dRef.value?.setViewPreset?.(configuredViewPreset)
+      systemMessage.info(`配置未保存相机位置，已恢复${configuredViewPreset}预设`)
+    }
+
+    const refreshPointClouds = () => {
+      scene3dRef.value?.refreshPointClouds?.()
     }
 
     const captureSceneScreenshot = () => {
@@ -791,10 +762,6 @@ export default {
       }
     }
 
-    const focusSelectedObject = () => {
-      scene3dRef.value?.focusSelection?.()
-    }
-    
     const toggleGrid = () => {
       sceneShowGrid.value = !sceneShowGrid.value
       settingsSnapshot.value.scene.showGrid = sceneShowGrid.value
@@ -812,6 +779,10 @@ export default {
     }
 
     const setSceneViewPreset = (preset) => {
+      if (preset === 'configured') {
+        resetViewFromConfig()
+        return
+      }
       settingsSnapshot.value.scene.viewPreset = preset
       settingsSnapshot.value.scene.camera = null
       if (scene3dRef.value?.setViewPreset) {
@@ -853,7 +824,7 @@ export default {
       }
     }
     
-    // 3D控制器事件处理
+    // 旧配置中的激光和地图字段仍通过统一设置通道恢复
     const onLaserTypeChange = (laserType) => {
       console.log(`激光类型切换: ${laserType}`)
       settingsSnapshot.value.laser.laserType = laserType
@@ -898,24 +869,6 @@ export default {
       replaceConfiguredTopic('map', 'mapTopic', topicName, 'nav_msgs/msg/OccupancyGrid')
     }
 
-    const onMapFileChange = (file) => {
-      console.log(`地图文件选择: ${file.name}`)
-      if (scene3dRef.value && scene3dRef.value.loadMapFile) {
-        scene3dRef.value.loadMapFile(file)
-      } else {
-        systemMessage.warning('3D场景未就绪，无法加载地图文件')
-      }
-    }
-
-    const onMapFilesChange = ({ yamlFile, pgmFile }) => {
-      console.log(`地图文件对选择: ${yamlFile.name} + ${pgmFile.name}`)
-      if (scene3dRef.value && scene3dRef.value.loadMapFiles) {
-        scene3dRef.value.loadMapFiles(yamlFile, pgmFile)
-      } else {
-        systemMessage.warning('3D场景未就绪，无法加载地图文件')
-      }
-    }
-
     const onOdomTopicChange = (topicName) => {
       const nextTopic = topicName || ''
       const previousTopic = settingsSnapshot.value.position.odomTopic
@@ -939,10 +892,10 @@ export default {
       }
     }
 
-    const onRobotModelVisibleChange = (visible) => {
+    const onPositionSettingsChange = (settings) => {
       onSettingsUpdate({
         type: 'position',
-        showRobotModel: visible === true
+        ...settings
       })
     }
 
@@ -979,6 +932,9 @@ export default {
       } else if (settings.type === 'trajectory') {
         settingsSnapshot.value.position.trajectoryLength = settings.trajectoryLength
       } else if (settings.type === 'scene') {
+        if (settings.source === 'config') {
+          rememberConfiguredView(settings)
+        }
         if (settings.showGrid !== undefined) {
           sceneShowGrid.value = settings.showGrid
           settingsSnapshot.value.scene.showGrid = settings.showGrid
@@ -1036,9 +992,6 @@ export default {
           if (typeof settings.collapsedPanels.settings === 'boolean') {
             setPanelCollapsed('settings', settings.collapsedPanels.settings)
           }
-          if (typeof settings.collapsedPanels.controller === 'boolean') {
-            setPanelCollapsed('controller', settings.collapsedPanels.controller)
-          }
         }
       } else if (settings.type === 'goal') {
         onGoalUpdate(settings.goal || settings)
@@ -1048,25 +1001,8 @@ export default {
       }
     }
 
-    const onCameraReset = () => {
-      console.log('重置相机')
-      resetView()
-    }
-
-    const onViewPreset = (preset) => {
-      console.log(`视角预设: ${preset}`)
-      settingsSnapshot.value.scene.viewPreset = preset
-      settingsSnapshot.value.scene.camera = null
-      if (scene3dRef.value && scene3dRef.value.setViewPreset) {
-        scene3dRef.value.setViewPreset(preset)
-      }
-    }
-
-    const onNavigationToolChange = (tool) => {
-      console.log('导航工具切换:', tool)
-      if (scene3dRef.value && scene3dRef.value.setNavigationTool) {
-        scene3dRef.value.setNavigationTool(tool)
-      }
+    const onConfigSaved = (config) => {
+      rememberConfiguredView(config?.scene)
     }
 
     const normalizeGoal = (goal) => ({
@@ -1269,8 +1205,7 @@ export default {
       settingsSnapshot.value.layout.sceneWidth = Number(sceneWidth.value.toFixed(2))
       syncSidePanelHeightsToSettings()
       settingsSnapshot.value.layout.collapsedPanels = {
-        settings: settingsCollapsed.value,
-        controller: controllerCollapsed.value
+        settings: settingsCollapsed.value
       }
       const videoLayout = rtspVideoRef.value?.getLayout?.()
       if (videoLayout) {
@@ -1299,7 +1234,6 @@ export default {
       rtspStreamUrl,
       isSceneRecording,
       settingsCollapsed,
-      controllerCollapsed,
       setPanelCollapsed,
       settingsSnapshot,
       availableFrameIds,
@@ -1311,7 +1245,7 @@ export default {
       getChartDockStyle,
       startChartDockResize,
       startSidePanelResize,
-      resetView,
+      refreshPointClouds,
       captureSceneScreenshot,
       toggleSceneRecording,
       connectRtspVideo,
@@ -1321,7 +1255,6 @@ export default {
       onRtspLayoutChange,
       activateSceneTool,
       onSceneToolChange,
-      focusSelectedObject,
       toggleGrid,
       toggleAxes,
       setSceneViewPreset,
@@ -1334,14 +1267,10 @@ export default {
       onLaser2DChange,
       onPointCloudChange,
       onMapTopicChange,
-      onMapFileChange,
-      onMapFilesChange,
       onOdomTopicChange,
-      onRobotModelVisibleChange,
+      onPositionSettingsChange,
       onSettingsUpdate,
-      onCameraReset,
-      onViewPreset,
-      onNavigationToolChange,
+      onConfigSaved,
       onGoalUpdate,
       onGoalPreview,
       onGoalPublish,
@@ -1401,23 +1330,26 @@ export default {
 }
 
 .chart-dock-resize-handle {
-  flex: 0 0 12px;
+  flex: 0 0 8px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: row-resize;
   user-select: none;
+  touch-action: none;
 }
 
 .chart-dock-resize-handle span {
-  width: 70px;
+  width: 54px;
   height: 4px;
   border-radius: 999px;
   background: var(--handle);
+  transition: width 0.16s ease, background-color 0.16s ease;
 }
 
-.chart-dock-resize-handle:hover span {
-  width: 100px;
+.chart-dock-resize-handle:hover span,
+.chart-dock-resize-handle:active span {
+  width: 84px;
   background: var(--handle-hover);
 }
 
@@ -1455,6 +1387,7 @@ export default {
   justify-content: center;
   cursor: col-resize;
   user-select: none;
+  touch-action: none;
 }
 
 .resize-line {
@@ -1490,7 +1423,6 @@ export default {
 .topic-config-mini-panel,
 .goal-mini-panel,
 .settings-mini-panel,
-.controller-mini-panel,
 .chart-mini-panel {
   flex: 0 0 auto;
   min-width: 0;
@@ -1502,6 +1434,7 @@ export default {
   justify-content: center;
   cursor: row-resize;
   user-select: none;
+  touch-action: none;
 }
 
 .side-panel-resize-handle span {
@@ -1546,6 +1479,31 @@ export default {
   align-items: center;
   gap: 2px;
   flex: 0 0 auto;
+}
+
+.view-tool-group {
+  gap: 0;
+}
+
+.view-tool-group :deep(.joined-tool-middle),
+.view-tool-group :deep(.joined-tool-last) {
+  margin-left: -1px;
+  border-radius: 0;
+}
+
+.view-tool-group :deep(.joined-tool-first) {
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+}
+
+.view-tool-group :deep(.joined-tool-last) {
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.view-tool-group :deep(.el-button:hover),
+.view-tool-group :deep(.el-button:focus-visible),
+.view-tool-group :deep(.el-button:active) {
+  position: relative;
+  z-index: 1;
 }
 
 .tool-separator {

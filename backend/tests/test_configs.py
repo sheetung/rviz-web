@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -126,10 +127,7 @@ async def test_theme_and_collapsed_panels_round_trip(config_storage):
 
     assert saved.config.appearance.theme == "light"
     assert saved.config.layout.sceneWidth == 64
-    assert saved.config.layout.collapsedPanels == {
-        "settings": False,
-        "controller": True,
-    }
+    assert saved.config.layout.collapsedPanels == {"settings": False}
 
 
 @pytest.mark.asyncio
@@ -175,6 +173,71 @@ def test_unknown_top_level_config_fields_are_rejected(config_storage):
                 "unexpected": True,
             }
         )
+
+
+@pytest.mark.asyncio
+async def test_get_config_repairs_legacy_fields_and_preserves_unknown_data(
+    config_storage,
+):
+    config_dir, backup_dir, _ = config_storage
+    config_dir.mkdir(parents=True)
+    path = config_dir / "legacy.rvizweb"
+    path.write_text(
+        json.dumps(
+            {
+                "name": "old-name.rvizweb",
+                "version": 1,
+                "config": {
+                    "fixed_frame": "odom",
+                    "position": {
+                        "odom_topic": "/robot/odom",
+                        "show_robot_model": True,
+                        "show_trajectory": False,
+                        "trajectory_length": 42,
+                    },
+                    "layout": {
+                        "panel_heights": {"gps": 240, "controller": 520},
+                        "collapsed_panels": {
+                            "settings": False,
+                            "controller": True,
+                        },
+                    },
+                    "displays": [
+                        {
+                            "name": "/robot/odom",
+                            "message_type": "nav_msgs/msg/Odometry",
+                        }
+                    ],
+                    "legacyWidget": {"enabled": True},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = await configs.get_config("legacy")
+
+    assert result.repaired is True
+    assert result.name == "legacy.rvizweb"
+    assert result.config.fixedFrame == "odom"
+    assert result.config.position.odomTopic == "/robot/odom"
+    assert result.config.position.showRobotModel is True
+    assert result.config.position.showTrajectory is False
+    assert result.config.position.trajectoryLength == 42
+    assert result.config.displays[0].messageType == "nav_msgs/msg/Odometry"
+    assert result.config.layout.panelHeights == {"gps": 240}
+    assert result.config.layout.collapsedPanels == {"settings": False}
+    assert result.config.extensions["legacy"]["legacyWidget"] == {"enabled": True}
+    assert len(list(backup_dir.glob("legacy.*.rvizweb.bak"))) == 1
+
+    repaired_document = json.loads(path.read_text(encoding="utf-8"))
+    assert repaired_document["config"]["fixedFrame"] == "odom"
+    assert "fixed_frame" not in repaired_document["config"]
+    assert "controller" not in repaired_document["config"]["layout"]["panelHeights"]
+
+    second_result = await configs.get_config("legacy")
+    assert second_result.repaired is False
+    assert len(list(backup_dir.glob("legacy.*.rvizweb.bak"))) == 1
 
 
 @pytest.mark.asyncio

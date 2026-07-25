@@ -5,7 +5,7 @@
     "fixedFrame": "map",
     "followFrame": "",
     "scene": { "showGrid": true, "showAxes": true, "viewPreset": "iso", "camera": { "position": { "x": 0, "y": -14, "z": 10 }, "target": { "x": 0, "y": 0, "z": 0 }, "up": { "x": 0, "y": 0, "z": 1 }, "zoom": 1 } },
-    "layout": { "sceneWidth": 68, "panelHeights": {}, "collapsedPanels": { "settings": true, "controller": true } },
+    "layout": { "sceneWidth": 68, "panelHeights": {}, "collapsedPanels": { "settings": true } },
     "appearance": { "theme": "dark" },
     "video": { "sourceUrl": "", "visible": false, "layout": { "x": null, "y": null, "width": 360, "height": 240 } },
     "goal": { "topic": "/goal_pose", "x": 0, "y": 0, "z": 0 },
