@@ -3,6 +3,7 @@ from datetime import datetime
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from rclpy.qos import QoSHistoryPolicy
 
 from app.models.ros import ConnectionInfo
 from app.services.rosbridge import RosbridgeService
@@ -31,6 +32,7 @@ async def test_message_cache_does_not_retain_serialized_payloads(settings, monke
         message_count=0,
     )
     large_payload = {"data": "x" * 1_000_000, "data_encoding": "base64"}
+    service._subscription_types["/large_points"] = "sensor_msgs/msg/PointCloud2"
     service._converter.to_dict = Mock(return_value=large_payload)
     service.connection_manager.broadcast = AsyncMock(return_value=True)
 
@@ -40,3 +42,36 @@ async def test_message_cache_does_not_retain_serialized_payloads(settings, monke
     assert len(service.message_cache) == 1
     assert service.message_cache[0]["topic"] == "/large_points"
     assert "message" not in service.message_cache[0]
+    assert (
+        service.connection_manager.broadcast.await_args.kwargs["coalesce_topic"] is True
+    )
+
+
+def test_pointcloud_forward_rate_is_limited_before_conversion(settings):
+    limited_settings = settings.model_copy(update={"ros_pointcloud_max_hz": 10.0})
+    service = RosbridgeService(limited_settings)
+    service._subscription_types["/points"] = "sensor_msgs/msg/PointCloud2"
+
+    assert service._claim_topic_forward_slot("/points", now=1.0)
+    assert service._claim_topic_forward_slot("/points", now=1.05)
+    assert not service._claim_topic_forward_slot("/points", now=1.06)
+    assert service._claim_topic_forward_slot("/points", now=1.11)
+
+
+def test_high_bandwidth_sensor_qos_keeps_only_latest_sample(settings):
+    service = RosbridgeService(settings)
+    keep_all_publisher = Mock(history=QoSHistoryPolicy.KEEP_ALL)
+
+    history, depth = service._subscriber_history_settings(
+        "sensor_msgs/msg/PointCloud2",
+        [keep_all_publisher],
+    )
+    assert history == QoSHistoryPolicy.KEEP_LAST
+    assert depth == 1
+
+    marker_history, marker_depth = service._subscriber_history_settings(
+        "visualization_msgs/msg/MarkerArray",
+        [keep_all_publisher],
+    )
+    assert marker_history == QoSHistoryPolicy.KEEP_ALL
+    assert marker_depth == 1000

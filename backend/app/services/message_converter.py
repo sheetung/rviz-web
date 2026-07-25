@@ -17,6 +17,17 @@ logger = logging.getLogger(__name__)
 class MessageConverter:
     """ROS2 消息与 Python 字典的双向转换器"""
 
+    _POINT_FIELD_BYTES = {
+        1: 1,
+        2: 1,
+        3: 2,
+        4: 2,
+        5: 4,
+        6: 4,
+        7: 4,
+        8: 8,
+    }
+
     def __init__(self, service: RosbridgeService):
         self._svc = service
 
@@ -251,8 +262,137 @@ class MessageConverter:
             )
             return None
 
+    @classmethod
+    def _compact_pointcloud_data(
+        cls,
+        pointcloud_msg,
+        fields: list[dict],
+        xyz_only: bool,
+    ) -> tuple[bytes | object, list[dict], int]:
+        """保留全部点，并可只保留浏览器渲染需要的 XYZ 字段。"""
+        import numpy as np
+
+        width = max(0, int(pointcloud_msg.width))
+        height = max(0, int(pointcloud_msg.height))
+        point_step = max(0, int(pointcloud_msg.point_step))
+        row_step = max(0, int(pointcloud_msg.row_step))
+        total_points = width * height
+        raw_data = pointcloud_msg.data
+
+        if total_points == 0 or point_step == 0:
+            return raw_data, fields, point_step
+
+        minimum_row_step = width * point_step
+        effective_row_step = (
+            row_step if row_step >= minimum_row_step else minimum_row_step
+        )
+        required_bytes = (height - 1) * effective_row_step + minimum_row_step
+        if len(raw_data) < required_bytes:
+            raise ValueError(
+                f"PointCloud2 数据长度 {len(raw_data)} 小于布局要求 {required_bytes}"
+            )
+
+        selected_fields = fields
+        if xyz_only:
+            by_name = {field.get("name"): field for field in fields}
+            xyz_fields = [by_name.get(name) for name in ("x", "y", "z")]
+            if all(xyz_fields):
+                next_offset = 0
+                compact_fields = []
+                for field in xyz_fields:
+                    datatype_bytes = cls._POINT_FIELD_BYTES.get(field["datatype"], 0)
+                    field_bytes = datatype_bytes * max(1, int(field.get("count", 1)))
+                    if (
+                        field_bytes <= 0
+                        or field["offset"] < 0
+                        or field["offset"] + field_bytes > point_step
+                    ):
+                        compact_fields = []
+                        break
+                    compact_fields.append(
+                        {
+                            **field,
+                            "offset": next_offset,
+                            "_source_offset": field["offset"],
+                            "_field_bytes": field_bytes,
+                        }
+                    )
+                    next_offset += field_bytes
+                if compact_fields:
+                    selected_fields = compact_fields
+
+        compact_xyz = selected_fields is not fields
+        if not compact_xyz and effective_row_step == minimum_row_step:
+            return raw_data, fields, point_step
+
+        raw_bytes = np.frombuffer(raw_data, dtype=np.uint8)
+        rows_are_compact = effective_row_step == minimum_row_step
+        if rows_are_compact:
+            records = raw_bytes[: total_points * point_step].reshape(
+                total_points,
+                point_step,
+            )
+            selected_records = records
+            if compact_xyz:
+                chunks = [
+                    selected_records[
+                        :,
+                        field["_source_offset"] : field["_source_offset"]
+                        + field["_field_bytes"],
+                    ]
+                    for field in selected_fields
+                ]
+                output = np.concatenate(chunks, axis=1).tobytes()
+            else:
+                output = selected_records.tobytes()
+        else:
+            point_indices = np.arange(total_points, dtype=np.int64)
+            source_offsets = (point_indices // width) * effective_row_step + (
+                point_indices % width
+            ) * point_step
+            output = bytearray(
+                total_points
+                * (
+                    sum(field["_field_bytes"] for field in selected_fields)
+                    if compact_xyz
+                    else point_step
+                )
+            )
+            destination_offset = 0
+            source_view = memoryview(raw_data).cast("B")
+            for source_offset in source_offsets:
+                if compact_xyz:
+                    for field in selected_fields:
+                        field_start = int(source_offset) + field["_source_offset"]
+                        field_end = field_start + field["_field_bytes"]
+                        field_bytes = source_view[field_start:field_end]
+                        output[
+                            destination_offset : destination_offset + len(field_bytes)
+                        ] = field_bytes
+                        destination_offset += len(field_bytes)
+                else:
+                    record = source_view[
+                        int(source_offset) : int(source_offset) + point_step
+                    ]
+                    output[destination_offset : destination_offset + point_step] = (
+                        record
+                    )
+                    destination_offset += point_step
+            output = bytes(output)
+
+        clean_fields = [
+            {key: value for key, value in field.items() if not key.startswith("_")}
+            for field in selected_fields
+        ]
+        output_point_step = (
+            sum(field["_field_bytes"] for field in selected_fields)
+            if compact_xyz
+            else point_step
+        )
+        return output, clean_fields, output_point_step
+
     def process_pointcloud(self, pointcloud_msg) -> dict:
-        """处理点云数据，保留完整 PointCloud2 二进制数据"""
+        """在保留全部点的前提下紧凑 PointCloud2 点记录。"""
         try:
             # 解析点云字段
             fields = []
@@ -306,31 +446,42 @@ class MessageConverter:
                     total_points,
                 )
 
-                # 对于大型数据使用Base64编码，小型数据直接传输。这里不做点采样，避免地图在前端显示成被截断/抽稀。
-                if len(pointcloud_msg.data) > 10000:  # 大于10KB使用Base64
+                point_data, output_fields, output_point_step = (
+                    self._compact_pointcloud_data(
+                        pointcloud_msg,
+                        fields,
+                        self._svc.settings.ros_pointcloud_xyz_only,
+                    )
+                )
+                compact_xyz = (
+                    output_fields != fields
+                    or output_point_step != pointcloud_msg.point_step
+                )
+                result["fields"] = output_fields
+                result["point_step"] = output_point_step
+                result["row_step"] = result["width"] * output_point_step
+
+                # 大型数据使用 Base64；只压缩点记录，不减少点数。
+                if len(point_data) > 10000:
                     import base64
 
-                    result["data"] = base64.b64encode(pointcloud_msg.data).decode(
-                        "ascii"
-                    )
+                    result["data"] = base64.b64encode(point_data).decode("ascii")
                     result["data_encoding"] = "base64"
                     logger.debug(
-                        "Full pointcloud transmission - %s bytes, %s points, Base64 encoded",
+                        "Pointcloud transmission - %s -> %s bytes, %s points retained",
                         len(pointcloud_msg.data),
+                        len(point_data),
                         total_points,
                     )
                 else:
-                    result["data"] = list(pointcloud_msg.data)
+                    result["data"] = list(point_data)
                     result["data_encoding"] = "array"
-                    logger.debug(
-                        "Full pointcloud transmission - %s bytes, %s points, as array",
-                        len(pointcloud_msg.data),
-                        total_points,
-                    )
 
                 result["sampled"] = False
                 result["original_points"] = total_points
                 result["sample_step"] = 1
+                result["xyz_only"] = compact_xyz
+                result["original_bytes"] = len(pointcloud_msg.data)
             else:
                 result["data"] = []
                 result["data_encoding"] = "array"

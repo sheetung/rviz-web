@@ -39,6 +39,7 @@ class Settings(BaseSettings):
         le=268_435_456,
     )
     ros_pointcloud_max_hz: float = Field(default=10.0, ge=0.0, le=120.0)
+    ros_pointcloud_xyz_only: bool = Field(default=True)
     ros_image_max_bytes: int = Field(
         default=8_388_608,
         ge=262_144,

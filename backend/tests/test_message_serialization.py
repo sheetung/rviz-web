@@ -1,3 +1,4 @@
+import struct
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -101,3 +102,74 @@ def test_compressed_image_size_limit_is_enforced():
 
     assert result["data"] == []
     assert "超过上限" in result["error"]
+
+
+def test_pointcloud_retains_all_points_and_compacts_to_xyz():
+    fake_service = SimpleNamespace(
+        settings=SimpleNamespace(
+            ros_pointcloud_max_bytes=10_000,
+            ros_pointcloud_xyz_only=True,
+        ),
+    )
+    converter = MessageConverter(fake_service)
+    converter.to_dict = Mock(return_value={"frame_id": "lidar"})
+    fields = [
+        SimpleNamespace(name="x", offset=0, datatype=7, count=1),
+        SimpleNamespace(name="y", offset=4, datatype=7, count=1),
+        SimpleNamespace(name="z", offset=8, datatype=7, count=1),
+        SimpleNamespace(name="intensity", offset=12, datatype=6, count=1),
+    ]
+    point_data = b"".join(
+        struct.pack("<fffI", float(index), index + 0.25, -index, index * 10)
+        for index in range(10)
+    )
+    pointcloud = SimpleNamespace(
+        header=object(),
+        height=1,
+        width=10,
+        fields=fields,
+        is_bigendian=False,
+        point_step=16,
+        row_step=160,
+        is_dense=True,
+        data=point_data,
+    )
+
+    result = converter.process_pointcloud(pointcloud)
+
+    assert result["data_encoding"] == "array"
+    assert result["height"] == 1
+    assert result["width"] == 10
+    assert result["point_step"] == 12
+    assert result["row_step"] == 120
+    assert [field["name"] for field in result["fields"]] == ["x", "y", "z"]
+    compacted_points = list(struct.iter_unpack("<fff", bytes(result["data"])))
+    assert [point[0] for point in compacted_points] == [
+        float(index) for index in range(10)
+    ]
+    assert result["sampled"] is False
+    assert result["sample_step"] == 1
+    assert result["xyz_only"] is True
+    assert result["original_points"] == 10
+    assert result["original_bytes"] == 160
+
+
+def test_pointcloud_compaction_honors_organized_row_padding():
+    pointcloud = SimpleNamespace(
+        width=2,
+        height=2,
+        point_step=1,
+        row_step=3,
+        data=bytes([10, 11, 255, 20, 21, 255]),
+    )
+    fields = [{"name": "x", "offset": 0, "datatype": 2, "count": 1}]
+
+    data, output_fields, point_step = MessageConverter._compact_pointcloud_data(
+        pointcloud,
+        fields,
+        xyz_only=False,
+    )
+
+    assert data == bytes([10, 11, 20, 21])
+    assert output_fields == fields
+    assert point_step == 1
