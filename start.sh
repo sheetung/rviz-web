@@ -83,6 +83,22 @@ check_port() {
   fi
 }
 
+validate_port() {
+  local name="$1" port="$2"
+  [[ "$port" =~ ^[0-9]+$ ]] || fail "$name must be a number: $port"
+  (( port >= 1 && port <= 65535 )) || fail "$name must be between 1 and 65535: $port"
+}
+
+backend_port_from_ws_url() {
+  local url="${1:-}"
+  [[ -n "$url" ]] || { printf '8000'; return; }
+  node -e '
+    const url = new URL(process.argv[1]);
+    if (url.protocol !== "ws:" && url.protocol !== "wss:") process.exit(1);
+    process.stdout.write(url.port || (url.protocol === "wss:" ? "443" : "80"));
+  ' "$url"
+}
+
 wait_for_http() {
   local url="$1" name="$2" pid="$3" timeout_seconds="${4:-60}"
   local max_attempts=$(( timeout_seconds * 5 ))
@@ -111,6 +127,41 @@ health_host_for_bind() {
   esac
 }
 
+default_cors_origins() {
+  local app_host="$1" app_port="$2"
+  local origins="http://localhost:$app_port,http://127.0.0.1:$app_port"
+  local candidate
+
+  if [[ "$app_host" != "0.0.0.0" && "$app_host" != "::" && "$app_host" != "127.0.0.1" && "$app_host" != "localhost" ]]; then
+    origins+=",http://$app_host:$app_port"
+  fi
+
+  if [[ "$app_host" == "0.0.0.0" || "$app_host" == "::" ]]; then
+    for candidate in $(hostname -I 2>/dev/null || true); do
+      [[ "$candidate" == *:* ]] && continue
+      origins+=",http://$candidate:$app_port"
+    done
+    candidate="$(hostname 2>/dev/null || true)"
+    [[ -n "$candidate" ]] && origins+=",http://$candidate:$app_port"
+  fi
+
+  printf '%s' "$origins"
+}
+
+log_access_urls() {
+  local app_host="$1" app_port="$2" candidate
+  if [[ "$app_host" != "0.0.0.0" && "$app_host" != "::" ]]; then
+    log "Application: http://$app_host:$app_port"
+    return
+  fi
+
+  log "Application: http://127.0.0.1:$app_port"
+  for candidate in $(hostname -I 2>/dev/null || true); do
+    [[ "$candidate" == *:* ]] && continue
+    log "LAN:         http://$candidate:$app_port"
+  done
+}
+
 cleanup() {
   trap - INT TERM EXIT
   log "Stopping services"
@@ -137,6 +188,7 @@ start_local() {
   check_command curl
   check_command uv
   check_command npm
+  check_command node
   check_command ss
   check_command setsid
   load_env
@@ -144,18 +196,24 @@ start_local() {
 
   check_command "${FFMPEG_PATH:-ffmpeg}"
 
-  local backend_port="${BACKEND_PORT:?Set BACKEND_PORT in $ENV_FILE}"
-  local frontend_port="${FRONTEND_PORT:?Set FRONTEND_PORT in $ENV_FILE}"
-  local backend_host="${BACKEND_HOST:-127.0.0.1}"
-  local frontend_host="${FRONTEND_HOST:-127.0.0.1}"
-  local frontend_public_host="${FRONTEND_PUBLIC_HOST:-127.0.0.1}"
+  local app_host="${APP_HOST:-127.0.0.1}"
+  local app_port="${APP_PORT:-3000}"
+  local backend_port
+  backend_port="$(backend_port_from_ws_url "${ROS_WS_URL:-}")" || fail "Invalid ROS_WS_URL: ${ROS_WS_URL:-}"
+  local backend_host_default="127.0.0.1"
+  [[ -n "${ROS_WS_URL:-}" ]] && backend_host_default="0.0.0.0"
+  local backend_host="$backend_host_default"
   local backend_health_host
   local frontend_health_host
   local default_rvizweb_config="${RVIZWEB_CONFIG:?Set RVIZWEB_CONFIG in $ENV_FILE}"
   backend_health_host="$(health_host_for_bind "$backend_host")"
-  frontend_health_host="$(health_host_for_bind "$frontend_host")"
+  frontend_health_host="$(health_host_for_bind "$app_host")"
+  export CORS_ORIGINS="${CORS_ORIGINS:-$(default_cors_origins "$app_host" "$app_port")}"
+  validate_port APP_PORT "$app_port"
+  validate_port ROS_WS_URL_PORT "$backend_port"
+  [[ "$app_port" != "$backend_port" ]] || fail "APP_PORT and the ROS_WS_URL port must be different"
   check_port "$backend_port"
-  check_port "$frontend_port"
+  check_port "$app_port"
 
   [[ "$default_rvizweb_config" == *.rvizweb ]] || fail "Default frontend config must use the .rvizweb suffix"
   [[ -f "$PROJECT_ROOT/rvizweb_configs/$default_rvizweb_config" ]] || fail "Default frontend config not found: rvizweb_configs/$default_rvizweb_config"
@@ -178,25 +236,24 @@ start_local() {
   ) >"$LOG_DIR/backend.log" 2>&1 &
   BACKEND_PID=$!
 
-  log "Starting frontend on $frontend_port ($frontend_mode mode)"
+  log "Starting frontend on $app_port ($frontend_mode mode)"
   (
     cd "$FRONTEND_DIR"
     if [[ "$frontend_mode" == "dev" ]]; then
       export VITE_RVIZWEB_CONFIG="$default_rvizweb_config"
       export CHOKIDAR_USEPOLLING="${CHOKIDAR_USEPOLLING:-true}"
       export CHOKIDAR_INTERVAL="${CHOKIDAR_INTERVAL:-500}"
-      exec setsid npm run dev -- --host "$frontend_host" --port "$frontend_port"
+      exec setsid npm run dev -- --host "$app_host" --port "$app_port"
     fi
-    exec setsid npm run preview -- --host "$frontend_host" --port "$frontend_port"
+    exec setsid npm run preview -- --host "$app_host" --port "$app_port"
   ) >>"$LOG_DIR/frontend.log" 2>&1 &
   FRONTEND_PID=$!
 
   wait_for_http "http://$backend_health_host:$backend_port/health" backend "$BACKEND_PID" 120
-  wait_for_http "http://$frontend_health_host:$frontend_port" frontend "$FRONTEND_PID" 120
+  wait_for_http "http://$frontend_health_host:$app_port" frontend "$FRONTEND_PID" 120
 
-  log "Frontend: http://$frontend_public_host:$frontend_port"
-  log "Backend:  http://$backend_health_host:$backend_port"
-  log "Config:   rvizweb_configs/$default_rvizweb_config"
+  log_access_urls "$app_host" "$app_port"
+  log "Config:      rvizweb_configs/$default_rvizweb_config"
   wait -n "$BACKEND_PID" "$FRONTEND_PID"
   fail "A service stopped unexpectedly; see $LOG_DIR"
 }

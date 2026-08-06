@@ -9,15 +9,20 @@ const appVersion = readFileSync(new URL('../VERSION', import.meta.url), 'utf8').
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '..', '')
-  const backendPort = env.BACKEND_PORT || '8000'
+  const appPort = Number(env.APP_PORT || 3000)
+  const rosWebSocketUrl = env.ROS_WS_URL || ''
+  const configuredWebSocket = rosWebSocketUrl ? new URL(rosWebSocketUrl) : null
+  const backendPort = configuredWebSocket
+    ? configuredWebSocket.port || (configuredWebSocket.protocol === 'wss:' ? '443' : '80')
+    : '8000'
   const backendProxy = {
     '/api': {
-      target: `http://localhost:${backendPort}`,
+      target: `http://127.0.0.1:${backendPort}`,
       changeOrigin: true,
       xfwd: true
     },
     '/ws': {
-      target: `ws://localhost:${backendPort}`,
+      target: `ws://127.0.0.1:${backendPort}`,
       ws: true,
       xfwd: true
     }
@@ -26,7 +31,8 @@ export default defineConfig(({ mode }) => {
   return {
   envDir: '..',
   define: {
-    'import.meta.env.VITE_APP_VERSION': JSON.stringify(appVersion)
+    'import.meta.env.VITE_APP_VERSION': JSON.stringify(appVersion),
+    'import.meta.env.ROS_WS_URL': JSON.stringify(rosWebSocketUrl)
   },
   plugins: [
     vue(),
@@ -39,7 +45,7 @@ export default defineConfig(({ mode }) => {
     })
   ],
   server: {
-    port: 3000,
+    port: appPort,
     watch: {
       usePolling: process.env.CHOKIDAR_USEPOLLING === 'true',
       interval: Number(process.env.CHOKIDAR_INTERVAL || 500)
@@ -47,6 +53,7 @@ export default defineConfig(({ mode }) => {
     proxy: backendProxy
   },
   preview: {
+    port: appPort,
     proxy: backendProxy
   },
   build: {

@@ -18,7 +18,7 @@ trap cleanup EXIT INT TERM
 
 /app/backend/.venv/bin/uvicorn app.main:app \
   --host "${BACKEND_HOST:-127.0.0.1}" \
-  --port "${BACKEND_PORT:-8000}" &
+  --port 8000 &
 backend_pid=$!
 
 nginx -g "daemon off;" &

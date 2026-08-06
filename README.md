@@ -174,8 +174,11 @@ DELETE /api/v1/video/sessions/{session_id}
 ```bash
 cd <your_workspace>/rviz-web
 cp .env.example .env
-# 编辑 .env，按需修改端口、ROS_DOMAIN_ID 等配置
+# 通常只需修改 ROS_DOMAIN_ID；局域网访问时再设置 APP_HOST=0.0.0.0
 ```
+
+项目升级后如果环境变量有调整，请重新复制 `.env.example`，再填写当前设备配置；
+旧变量不做兼容迁移。
 
 后端使用 [uv](https://docs.astral.sh/uv/) 管理 Python 环境。首次安装或依赖变化后执行：
 
@@ -209,7 +212,7 @@ cp .env.example .env
 - FFmpeg（用于把浏览器不支持的 RTSP 转为 MJPEG）
 - curl（若未安装 `uv`，启动脚本会通过官方安装脚本自动安装）
 
-启动脚本会读取项目根目录 `.env`，加载 ROS2 环境，检查默认 `.rvizweb` 配置以及 `FRONTEND_PORT`、`BACKEND_PORT` 指定的端口，等待前后端健康检查，并把输出统一写入 `logs/`。启动后显示的前端访问主机由 `FRONTEND_PUBLIC_HOST` 配置。启动失败会立即退出；Ctrl+C 会停止整个前后端进程组。
+启动脚本会读取项目根目录 `.env`，加载 ROS2 环境，检查默认 `.rvizweb` 配置和端口，等待前后端健康检查，并把输出统一写入 `logs/`。浏览器始终通过 `APP_HOST:APP_PORT` 访问；后端端口从 `ROS_WS_URL` 自动解析，留空时默认为 `8000`。设置 `APP_HOST=0.0.0.0` 时，脚本会自动显示检测到的局域网地址。启动失败会立即退出；Ctrl+C 会停止整个前后端进程组。
 
 浏览器标签页和页面左上角标题可在 `.env` 中修改：
 
@@ -217,15 +220,15 @@ cp .env.example .env
 VITE_APP_TITLE=RVizWeb
 ```
 
-需要让浏览器直接连接指定 ROS 后端时，可以配置完整 WebSocket 地址：
+正常部署不需要配置后端 IP、API URL、WebSocket URL 或 CORS。只有前后端刻意分离部署时，才需要使用高级覆盖项：
 
 ```env
-VITE_ROS_WS_URL=ws://192.168.1.66:8090/ws
+ROS_WS_URL=ws://192.168.31.16:8000/ws
 ```
 
-留空时使用当前页面同源的 `/ws`。该变量只控制浏览器连接目标，后端进程仍由
-`BACKEND_HOST` 和 `BACKEND_PORT` 控制绑定地址与监听端口。修改 Vite 环境变量后
-需要重启开发服务或重新执行正常模式构建。
+不设置时使用当前页面同源的 `/ws`。修改 Vite 环境变量后需要重启开发服务或重新执行正常模式构建。
+当前 `/ws` 后端使用 `rclpy`，只支持 ROS2。后续接入 ROS1 时建议增加独立的
+`/ws/ros1` 适配器路由；仅修改路径或增加查询参数不会自动获得 ROS1 能力。
 
 点击点云视图工具栏中的相机监视器按钮后，会在按钮下方展开连接配置浮层。输入地址并连接，例如：
 
@@ -258,10 +261,10 @@ FFMPEG_PATH=ffmpeg
 
 正常模式修改后重新执行 `./start.sh` 以重新构建前端；开发模式会随 Vite 重启或环境重新加载后生效。
 
-前后端默认只绑定 `127.0.0.1`。若要开放到局域网，应设置
-`FRONTEND_HOST`、必要时设置 `BACKEND_HOST`，并在 `CORS_ORIGINS` 中精确列出
-实际前端 Origin。应用本身不提供登录鉴权，应通过防火墙、可信局域网或 VPN
-限制访问范围；不要把服务端口直接暴露到公网。
+应用默认只监听 `127.0.0.1`。若要开放到局域网，只需设置 `APP_HOST=0.0.0.0`；
+启动脚本会自动推导代理目标、健康检查地址和允许的浏览器来源。应用本身不提供
+登录鉴权，应通过防火墙、可信局域网或 VPN 限制访问范围；不要把服务端口直接
+暴露到公网。
 
 ROS 发布默认只允许 `/goal_pose`、`/initialpose` 和 `/cmd_vel`，消息类型也受
 `ROS_PUBLISH_TYPE_ALLOWLIST` 限制。部署其他机器人话题时应在 `.env` 中显式扩展

@@ -46,16 +46,12 @@ RVizWeb 是一个面向 ROS2 的浏览器可视化工具。前端使用 Vue 3、
 | 变量 | 用途 |
 | --- | --- |
 | `ROS_DOMAIN_ID` | ROS2 DDS 通信域；未设置该变量的 ROS2 设备默认使用 `0` |
-| `BACKEND_HOST` | FastAPI 绑定地址 |
-| `BACKEND_PORT` | FastAPI HTTP 与 `/ws` WebSocket 共用端口 |
-| `FRONTEND_PORT` | Vite 开发服务器端口 |
-| `FRONTEND_HOST` | Vite 实际绑定地址，默认 `127.0.0.1` |
-| `FRONTEND_PUBLIC_HOST` | 仅用于启动完成后显示访问地址 |
+| `APP_HOST` | 应用对外绑定地址；局域网访问设为 `0.0.0.0` |
+| `APP_PORT` | 浏览器访问端口；API 和 WebSocket 自动同源代理 |
+| `ROS_WS_URL` | 可选的浏览器直连 WebSocket 地址；留空使用同源 `/ws` |
 | `VITE_APP_TITLE` | 浏览器标签页和页面左上角显示的应用标题 |
-| `VITE_ROS_WS_URL` | 浏览器连接 ROS 后端的完整 WebSocket 地址；留空使用同源 `/ws` |
 | `CHOKIDAR_USEPOLLING` | 开发模式使用轮询代替 inotify；正常模式不读取该变量 |
 | `CHOKIDAR_INTERVAL` | 开发模式的文件轮询间隔，单位为毫秒 |
-| `CORS_ORIGINS` | 允许访问后端 API 的前端来源，使用英文逗号分隔 |
 | `ROS_SUBSCRIBE_TOPIC_ALLOWLIST` | WebSocket 可订阅 Topic glob |
 | `ROS_PUBLISH_TOPIC_ALLOWLIST` | HTTP/WebSocket 可发布 Topic glob |
 | `ROS_PUBLISH_TYPE_ALLOWLIST` | 可发布 ROS 消息类型 |
@@ -69,8 +65,10 @@ ROS 话题名不应放在 `.env` 中。Displays、Fixed Frame、odom 话题、�
 
 应用层不提供登录鉴权。局域网部署应通过绑定地址、防火墙或 VPN 限制访问范围，不能将后端、前端或反向代理端口直接暴露到公网。
 
-`VITE_ROS_WS_URL` 只控制浏览器的 WebSocket 目标，不替代 `BACKEND_HOST` 和
-`BACKEND_PORT`；后两者仍用于控制 Uvicorn 的绑定地址和监听端口。
+正常部署无需配置后端 IP、API URL、WebSocket URL 或 CORS。启动脚本会根据
+`APP_HOST`、`APP_PORT` 和 `ROS_WS_URL` 自动推导这些内部地址。只有前后端分离
+部署时才应使用 `ROS_WS_URL`、`VITE_BACKEND_PUBLIC_URL` 或 `CORS_ORIGINS`
+等高级覆盖项。
 
 ## 安装与启动
 
@@ -118,16 +116,15 @@ RVIZWEB_CONFIG=default.rvizweb ./start.sh local
 
 ## 访问入口
 
-端口以 `.env` 为准。使用示例端口时：
+端口以 `.env` 为准。使用示例端口时，用户入口只有：
 
-- 前端：`http://localhost:3000/`
-- 后端健康检查：`http://localhost:8000/health`
-- OpenAPI 文档：`http://localhost:8000/docs`
-- WebSocket：由前端同源 `/ws` 代理访问
+- 应用：`http://localhost:3000/`
+- API：由应用同源 `/api` 代理访问
+- WebSocket：由应用同源 `/ws` 代理访问
 
 Vite 会将 `/api` 和 `/ws` 请求代理到本地后端，因此日常使用通常只需访问前端地址。
 
-前端代理会读取根目录 `.env` 的 `BACKEND_PORT`，正常模式和开发模式使用相同的 `/api`、`/ws` 后端目标。
+前端代理会从 `ROS_WS_URL` 解析内部后端端口；该变量留空时使用默认端口 `8000`。正常模式和开发模式使用相同的 `/api`、`/ws` 后端目标。
 
 ## 核心功能与消息类型
 
@@ -256,8 +253,8 @@ echo "${ROS_LOCALHOST_ONLY:-0}"
 
 ### 端口已被占用
 
-修改 `.env` 中的 `FRONTEND_PORT` 时，同时更新 `CORS_ORIGINS` 中对应的前端
-来源。Vite 代理会直接读取 `BACKEND_PORT`，不需要再修改源码。
+修改 `.env` 中的 `APP_PORT`；代理目标、CORS 和浏览器连接地址会自动更新。
+如果占用的是内部端口，修改 `ROS_WS_URL` 中的端口，不需要修改源码。
 
 ### 配置未按预期恢复
 

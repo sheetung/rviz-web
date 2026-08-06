@@ -26,7 +26,7 @@ export const useConnectionStore = defineStore('connection', () => {
   const browserLocation = typeof window === 'undefined' ? null : window.location
   const wsUrl = ref(createWebSocketUrl(
     browserLocation,
-    import.meta.env?.VITE_ROS_WS_URL
+    import.meta.env?.ROS_WS_URL
   ))
   const reconnectAttempts = ref(0)
   const reconnectInterval = ref(3000)

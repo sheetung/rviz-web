@@ -23,7 +23,6 @@ class Settings(BaseSettings):
 
     # 后端服务配置
     backend_host: str = Field(default="127.0.0.1", description="后端服务主机")
-    backend_port: int = Field(default=8000, description="后端服务端口")
     debug: bool = Field(default=False, description="调试模式")
 
     # ROS2 配置

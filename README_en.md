@@ -165,8 +165,11 @@ Before first use, copy the environment config example and modify as needed:
 ```bash
 cd <your_workspace>/rviz-web
 cp .env.example .env
-# Edit .env to adjust ports, ROS_DOMAIN_ID, etc.
+# Usually only ROS_DOMAIN_ID needs changing; use APP_HOST=0.0.0.0 for LAN access
 ```
+
+When environment variables change after an upgrade, copy `.env.example` again and
+fill in the current device settings. Retired variables are not migrated.
 
 The backend uses [uv](https://docs.astral.sh/uv/) for Python environment management. Run the following on first install or when dependencies change:
 
@@ -200,7 +203,7 @@ Local mode requires:
 - FFmpeg (converts RTSP into browser-compatible MJPEG)
 - curl (if `uv` is not installed, the startup script will install it via the official install script)
 
-The startup script reads `.env` from the project root, loads the ROS2 environment, checks the default `.rvizweb` config and ports specified by `FRONTEND_PORT`/`BACKEND_PORT`, waits for frontend and backend health checks, and writes all output to `logs/`. The frontend access host shown after startup is configured by `FRONTEND_PUBLIC_HOST`. Startup failures exit immediately; Ctrl+C stops the entire frontend and backend process group.
+The startup script reads `.env` from the project root, loads the ROS2 environment, validates the default `.rvizweb` config and ports, waits for frontend and backend health checks, and writes all output to `logs/`. The browser uses `APP_HOST:APP_PORT`; the backend port is parsed from `ROS_WS_URL` and defaults to `8000` when it is unset. With `APP_HOST=0.0.0.0`, the script prints the detected LAN addresses. Startup failures exit immediately; Ctrl+C stops the entire frontend and backend process group.
 
 The browser tab and top-left title can be changed in `.env`:
 
@@ -208,17 +211,19 @@ The browser tab and top-left title can be changed in `.env`:
 VITE_APP_TITLE=RVizWeb
 ```
 
-To connect the browser directly to a specific ROS backend, configure the full
-WebSocket endpoint:
+Normal deployments do not require a backend IP, API URL, WebSocket URL, or CORS
+configuration. Use this advanced override only for a deliberately separated frontend
+and backend:
 
 ```env
-VITE_ROS_WS_URL=ws://192.168.1.66:8090/ws
+ROS_WS_URL=ws://192.168.31.16:8000/ws
 ```
 
-When left empty, the frontend uses the same-origin `/ws` endpoint. This variable
-only selects the browser connection target; `BACKEND_HOST` and `BACKEND_PORT`
-still control the Uvicorn bind address and listening port. Restart the Vite dev
+When unset, the frontend uses the same-origin `/ws` endpoint. Restart the Vite dev
 server or rebuild normal mode after changing a Vite environment variable.
+The current `/ws` backend uses `rclpy` and supports ROS2 only. A future ROS1
+integration should use a dedicated `/ws/ros1` adapter route; changing the path or
+adding a query parameter alone does not provide ROS1 support.
 
 Click the camera monitor button in the point cloud toolbar to open the connection popover below the button, then enter a source such as:
 
@@ -242,11 +247,11 @@ a second resolution.
 
 In normal mode, re-run `./start.sh` after changes to rebuild the frontend. In dev mode, changes take effect on Vite restart or environment reload.
 
-Both servers bind to `127.0.0.1` by default. For LAN exposure, set
-`FRONTEND_HOST` and, when needed, `BACKEND_HOST`, and set `CORS_ORIGINS` to the
-exact frontend origins. The application does not provide login authentication;
-restrict access with a firewall, trusted LAN, or VPN, and never expose its
-service ports directly to the public Internet.
+The application listens on `127.0.0.1` by default. For LAN access, only set
+`APP_HOST=0.0.0.0`; the startup script derives proxy targets, health-check addresses,
+and allowed browser origins. The application does not provide login authentication;
+restrict access with a firewall, trusted LAN, or VPN, and never expose its service
+ports directly to the public Internet.
 
 ROS publishing is restricted by `ROS_PUBLISH_TOPIC_ALLOWLIST` and
 `ROS_PUBLISH_TYPE_ALLOWLIST`; extend these lists explicitly for robot-specific

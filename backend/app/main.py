@@ -33,7 +33,7 @@ async def lifespan(_app: FastAPI):
     logger.info("Starting RViz Web Visualization System")
     service = get_rosbridge_service()
     await service.start()
-    logger.info("Server started on port %s", settings.backend_port)
+    logger.info("Server started")
     try:
         yield
     finally:
@@ -159,6 +159,6 @@ if __name__ == "__main__":
     uvicorn.run(
         "app.main:app",
         host=settings.backend_host,
-        port=settings.backend_port,
+        port=8000,
         reload=settings.debug,
     )
