@@ -1,12 +1,13 @@
 # Changelog
 
-本项目遵循语义化版本控制，整个工程统一使用一套版本号。
+本项目遵循语义化版本控制。前端和后端独立定版与发布；`v1.3.0` 及之前的条目为历史统一版本。
 
 ## [Unreleased]
 
 ### Changed
 
-- 新增 `LOG_ENABLED` 启动日志开关，默认关闭；启用后每次启动创建一个按时间命名的目录，分别写入 `start.log`、`backend.log` 和 `frontend.log`，不覆盖历日志。
+- 前端和后端改为独立版本，分别使用 `frontend-v*` 和 `backend-v*` Git 标签；移除根目录统一 `VERSION` 文件。
+- 新增 `LOG_ENABLED` 启动日志开关，默认关闭；启用后每次启动创建一个按时间命名的目录，分别写入 `start.log`、`backend.log` 和 `frontend.log`，不覆盖历史日志。
 - 本地部署统一使用 `APP_HOST` 和 `APP_PORT` 作为浏览器入口，API 与 WebSocket 默认通过同源代理访问；`ROS_WS_URL` 仅用于需要直连的分离部署。
 - `.env.example` 只保留部署地址、ROS Domain、启动配置和 ROS 话题权限等用户参数。
 - 缓存、限流、消息大小、点云转发、配置备份和 RTSP 转码等高级项改为代码内置的系统参数，不再接受 `.env` 覆盖。

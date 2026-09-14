@@ -219,6 +219,14 @@ uv run python -m compileall -q app
 `start.sh` 的基础命令行为。ROS2 订阅、TF 和发布链路仍需在真实 ROS2
 环境中做集成验证。
 
+### 独立版本发布
+
+- 前端版本唯一来源是 `frontend/package.json`，锁文件由发布脚本同步。
+- 后端版本唯一来源是 `backend/pyproject.toml`，锁文件由发布脚本同步。
+- `./release.sh frontend <version>` 只运行前端检查，并创建 `frontend-v<version>` 标签。
+- `./release.sh backend <version>` 只运行后端检查，并创建 `backend-v<version>` 标签。
+- 默认只在本地创建提交和标签；显式传入 `--push` 才会推送。
+
 ## Docker 状态
 
 仓库提供 Node 22 前端构建、uv 锁文件安装、Nginx 同源代理和安全响应头的

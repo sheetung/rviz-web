@@ -1,7 +1,5 @@
 # RVizWeb
 
-> Current release: `v1.3.0`
-
 ![RVizWeb](img/1.png)
 
 ![RVizWeb](img/2.png)
@@ -370,6 +368,18 @@ cd frontend
 npm test
 ```
 
+The frontend and backend use independent semantic versions. The frontend version
+comes from `frontend/package.json`; the backend version comes from
+`backend/pyproject.toml`. Release either component independently:
+
+```bash
+./release.sh frontend 1.4.0
+./release.sh backend 1.3.1
+```
+
+These create tags such as `frontend-v1.4.0` and `backend-v1.3.1`. Add `--push`
+to push the current branch and the new tag.
+
 ## Directory Structure
 
 ```text
@@ -387,6 +397,7 @@ RVIZ-RQT-VISUAL/
 │       └── services/         # Backend API wrappers
 ├── rvizweb_configs/          # .rvizweb config file directory
 ├── .env                      # Runtime environment config (no ROS topic names)
+├── release.sh                # Independent frontend/backend release entry point
 ├── start.sh                  # Startup script
 └── README.md
 ```

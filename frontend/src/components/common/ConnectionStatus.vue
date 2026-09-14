@@ -35,7 +35,8 @@
         </div>
 
         <div class="version-meta" aria-label="版本信息">
-          <span>系统版本 v{{ appVersion }}</span>
+          <span>前端 v{{ frontendVersion }}</span>
+          <span>后端 v{{ backendVersion }}</span>
         </div>
 
         <div v-if="connectionStore.subscribedTopics.length > 0" class="subscribed-topics">
@@ -58,6 +59,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { Connection, ArrowDown } from '@element-plus/icons-vue'
 import { useConnectionStore } from '../../composables/useConnectionStore'
+import { appApi } from '../../services/api'
 import StatusPanel from '../panels/StatusPanel.vue'
 
 export default {
@@ -71,7 +73,8 @@ export default {
     const connectionStore = useConnectionStore()
     const showDetails = ref(false)
     const statusRef = ref(null)
-    const appVersion = import.meta.env.VITE_APP_VERSION || 'unknown'
+    const frontendVersion = import.meta.env.VITE_FRONTEND_VERSION || 'unknown'
+    const backendVersion = ref('unknown')
 
     // 徽章类型
     const badgeType = computed(() => {
@@ -122,8 +125,18 @@ export default {
       connectionStore.connect()
     }
 
+    const fetchBackendVersion = async () => {
+      try {
+        const response = await appApi.getVersion()
+        backendVersion.value = response?.version || 'unknown'
+      } catch {
+        backendVersion.value = 'unavailable'
+      }
+    }
+
     onMounted(() => {
       document.addEventListener('click', handleDocumentClick)
+      fetchBackendVersion()
     })
 
     onUnmounted(() => {
@@ -138,7 +151,8 @@ export default {
       buttonType,
       visibleTopics,
       hiddenTopicCount,
-      appVersion,
+      frontendVersion,
+      backendVersion,
       toggleDetails,
       closeDetails,
       reconnect

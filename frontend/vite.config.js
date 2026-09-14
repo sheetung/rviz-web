@@ -5,7 +5,8 @@ import Components from 'unplugin-vue-components/vite'
 import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 import { readFileSync } from 'node:fs'
 
-const appVersion = readFileSync(new URL('../VERSION', import.meta.url), 'utf8').trim()
+const frontendPackage = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
+const frontendVersion = frontendPackage.version || '0.0.0+unknown'
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '..', '')
@@ -31,7 +32,7 @@ export default defineConfig(({ mode }) => {
   return {
   envDir: '..',
   define: {
-    'import.meta.env.VITE_APP_VERSION': JSON.stringify(appVersion),
+    'import.meta.env.VITE_FRONTEND_VERSION': JSON.stringify(frontendVersion),
     'import.meta.env.ROS_WS_URL': JSON.stringify(rosWebSocketUrl)
   },
   plugins: [

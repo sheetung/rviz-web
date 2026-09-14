@@ -1,7 +1,5 @@
 # RVizWeb
 
-> 当前正式版本：`v1.3.0`
-
 ![RVizWeb](img/1.png)
 
 ![RVizWeb](img/2.png)
@@ -376,6 +374,16 @@ cd frontend
 npm test
 ```
 
+前端和后端使用独立语义化版本。前端版本来自 `frontend/package.json`，
+后端版本来自 `backend/pyproject.toml`。独立发布示例：
+
+```bash
+./release.sh frontend 1.4.0
+./release.sh backend 1.3.1
+```
+
+发布标签分别为 `frontend-v1.4.0` 和 `backend-v1.3.1`；加上 `--push` 才会推送分支和标签。
+
 ## 目录结构
 
 ```text
@@ -394,6 +402,7 @@ RVIZ-RQT-VISUAL/
 │       └── services/         # 后端 API 封装
 ├── rvizweb_configs/          # .rvizweb 配置文件目录
 ├── .env                      # 运行环境配置，不保存 ROS 话题名
+├── release.sh                # 前端/后端独立发布入口
 ├── start.sh                  # 启动脚本
 └── README.md
 ```

@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from .api.v1 import configs, ros, video
 from .core.config import get_settings
 from .core.security import origin_is_allowed
-from .core.version import APP_VERSION
+from .core.version import BACKEND_VERSION
 from .services.dependencies import get_rosbridge_service
 
 # 配置日志
@@ -46,7 +46,7 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(
     title="RViz Web Visualization",
     description="基于 Vue.js + FastAPI 的 ROS2 可视化平台",
-    version=APP_VERSION,
+    version=BACKEND_VERSION,
     docs_url=None,
     redoc_url=None,
     openapi_url=None,
@@ -118,7 +118,7 @@ app.include_router(video.router, prefix="/api/v1", tags=["Video"])
 @app.get("/")
 async def root():
     """根路径"""
-    return {"message": "RViz Web Visualization System", "version": APP_VERSION}
+    return {"message": "RViz Web Visualization System", "version": BACKEND_VERSION}
 
 
 @app.get("/health")
@@ -127,15 +127,15 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "ros-web-viz",
-        "version": APP_VERSION,
+        "version": BACKEND_VERSION,
     }
 
 
 @app.get("/api/v1/version")
 async def version_info():
-    """返回工程、API 与配置格式版本。"""
+    """返回后端版本。"""
     return {
-        "version": APP_VERSION,
+        "version": BACKEND_VERSION,
     }
 
 

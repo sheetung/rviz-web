@@ -72,6 +72,10 @@ export const rosApi = {
   getSystemStatus: () => api.get('/status')
 }
 
+export const appApi = {
+  getVersion: () => api.get('/version')
+}
+
 /**
  * RVizWeb config file API
  */

@@ -3,7 +3,6 @@
 FROM node:22-alpine AS frontend-build
 
 WORKDIR /build
-COPY VERSION ./VERSION
 COPY frontend/package*.json ./frontend/
 RUN --mount=type=cache,target=/root/.npm \
     cd frontend && npm ci
@@ -29,7 +28,6 @@ RUN python3 -m venv --system-site-packages .venv \
     && VIRTUAL_ENV=/app/backend/.venv uv sync --frozen --no-dev --active
 
 COPY backend/app ./app
-COPY VERSION /app/VERSION
 COPY rvizweb_configs /app/rvizweb_configs
 COPY --from=frontend-build /build/frontend/dist /var/www/html
 COPY docker/nginx.conf /etc/nginx/sites-available/default
