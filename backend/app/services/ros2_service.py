@@ -1,7 +1,4 @@
-"""
-Rosbridge 服务
-负责 ROS2 与 WebSocket 通信
-"""
+"""当前基于 rclpy 的 ROS2 服务实现。"""
 
 import asyncio
 import json
@@ -25,6 +22,7 @@ from rclpy.qos import (
 )
 
 from ..core.config import Settings
+from ..core.ros_types import canonical_message_type
 from ..models.ros import NodeInfo, SystemStatus, TopicInfo
 from .connection_manager import ConnectionManager
 from .frequency_tracker import FrequencyTracker
@@ -36,7 +34,6 @@ logger = logging.getLogger(__name__)
 
 _POINTCLOUD_MESSAGE_TYPES = {
     "sensor_msgs/msg/PointCloud2",
-    "sensor_msgs/PointCloud2",
 }
 
 # These messages describe a complete current sample. Replacing an unsent
@@ -44,11 +41,8 @@ _POINTCLOUD_MESSAGE_TYPES = {
 # they may contain DELETE/DELETEALL deltas that must remain ordered.
 _LATEST_ONLY_MESSAGE_TYPES = _POINTCLOUD_MESSAGE_TYPES | {
     "sensor_msgs/msg/LaserScan",
-    "sensor_msgs/LaserScan",
     "sensor_msgs/msg/Image",
-    "sensor_msgs/Image",
     "sensor_msgs/msg/CompressedImage",
-    "sensor_msgs/CompressedImage",
 }
 
 try:
@@ -57,8 +51,10 @@ except ImportError:
     psutil = None
 
 
-class RosbridgeService:
-    """Rosbridge 核心服务"""
+class Ros2Service:
+    """基于 rclpy 的 ROS2 服务实现。"""
+
+    middleware = "ros2"
 
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -68,7 +64,7 @@ class RosbridgeService:
             settings.websocket_send_timeout,
             settings.websocket_max_outbound_message_bytes,
         )
-        self._converter = MessageConverter(self)
+        self._converter = MessageConverter(settings)
         self._freq = FrequencyTracker(
             message_class_resolver=lambda msg_type: self._get_message_class(msg_type),
             frequency_clock=lambda: self._frequency_clock(),
@@ -197,7 +193,7 @@ class RosbridgeService:
             self.ros_spin_task = asyncio.create_task(self._ros_spin_loop())
 
         except Exception as e:
-            logger.error(f"Failed to start Rosbridge service: {e}")
+            logger.error(f"Failed to start ROS2 service: {e}")
             raise
 
     async def stop(self):
@@ -228,9 +224,9 @@ class RosbridgeService:
             await self.connection_manager.close_all()
             if rclpy.ok():
                 rclpy.shutdown()
-            logger.info("Rosbridge service stopped")
+            logger.info("ROS2 service stopped")
         except Exception as e:
-            logger.error(f"Error stopping Rosbridge service: {e}")
+            logger.error(f"Error stopping ROS2 service: {e}")
 
     async def handle_websocket(self, websocket: WebSocket):
         """处理 WebSocket 连接"""
@@ -422,6 +418,7 @@ class RosbridgeService:
     async def _create_subscriber(self, topic: str, msg_type: str):
         """创建 ROS2 订阅者"""
         try:
+            msg_type = canonical_message_type(msg_type)
             # 获取消息类
             msg_class = get_message_class(msg_type)
 
@@ -496,15 +493,10 @@ class RosbridgeService:
 
             sensor_like_types = {
                 "sensor_msgs/msg/PointCloud2",
-                "sensor_msgs/PointCloud2",
                 "sensor_msgs/msg/LaserScan",
-                "sensor_msgs/LaserScan",
                 "sensor_msgs/msg/Image",
-                "sensor_msgs/Image",
                 "sensor_msgs/msg/CompressedImage",
-                "sensor_msgs/CompressedImage",
                 "mars_quadrotor_msgs/msg/PositionCommand",
-                "mars_quadrotor_msgs/PositionCommand",
             }
 
             reliability = (
@@ -896,29 +888,6 @@ class RosbridgeService:
                 f"❌ Error processing message from {topic}: {e}", exc_info=True
             )
 
-    def _message_to_dict(self, msg) -> dict:
-        """委托到 MessageConverter（保留以兼容测试）"""
-        converter = getattr(self, "_converter", None)
-        if converter is None:
-            converter = self._converter = MessageConverter(self)
-        return converter.to_dict(msg)
-
-    def _dict_to_message(self, msg_class, data: dict):
-        """委托到 MessageConverter（保留以兼容测试）"""
-        converter = getattr(self, "_converter", None)
-        if converter is None:
-            converter = self._converter = MessageConverter(self)
-        return converter.from_dict(msg_class, data)
-
-    def _process_pointcloud_data(self, pointcloud_msg) -> dict:
-        return self._converter.process_pointcloud(pointcloud_msg)
-
-    def _process_image_data(self, image_msg) -> dict:
-        return self._converter.process_image(image_msg)
-
-    def _process_compressed_image_data(self, image_msg) -> dict:
-        return self._converter.process_compressed_image(image_msg)
-
     # API 方法实现
     def _get_topics_from_cli_sync(self) -> List[TopicInfo]:
         """Read the live ROS graph using the ros2 CLI."""
@@ -954,7 +923,16 @@ class RosbridgeService:
 
             if line.endswith("]") and " [" in line:
                 name, _, type_part = line.rpartition(" [")
-                message_type = type_part[:-1].strip() or "unknown"
+                raw_message_type = type_part[:-1].strip() or "unknown"
+                try:
+                    message_type = canonical_message_type(raw_message_type)
+                except ValueError:
+                    logger.warning(
+                        "Ignoring invalid ROS2 CLI message type %s for %s",
+                        raw_message_type,
+                        name,
+                    )
+                    message_type = "unknown"
             else:
                 name = line
                 message_type = "unknown"
@@ -1013,7 +991,16 @@ class RosbridgeService:
                 continue
             if line.endswith("]") and " [" in line:
                 name, _, type_part = line.rpartition(" [")
-                message_type = type_part[:-1].strip() or "unknown"
+                raw_message_type = type_part[:-1].strip() or "unknown"
+                try:
+                    message_type = canonical_message_type(raw_message_type)
+                except ValueError:
+                    logger.warning(
+                        "Ignoring invalid ROS2 CLI message type %s for %s",
+                        raw_message_type,
+                        name,
+                    )
+                    message_type = "unknown"
             else:
                 name = line
                 message_type = "unknown"
@@ -1102,7 +1089,11 @@ class RosbridgeService:
                     topics = [
                         TopicInfo(
                             name=name,
-                            message_type=types[0] if types else "unknown",
+                            message_type=(
+                                canonical_message_type(types[0])
+                                if types
+                                else "unknown"
+                            ),
                             publishers=[],
                             subscribers=[],
                         )
@@ -1133,11 +1124,14 @@ class RosbridgeService:
         self, topic_name: str, requested_type: Optional[str] = None
     ) -> Optional[str]:
         """根据 ROS graph 中的实际 topic 信息解析订阅类型。"""
+        requested_type = (
+            canonical_message_type(requested_type) if requested_type else None
+        )
         publisher_types = []
         if self.node:
             try:
                 publisher_types = [
-                    info.topic_type
+                    canonical_message_type(info.topic_type)
                     for info in self.node.get_publishers_info_by_topic(topic_name)
                     if getattr(info, "topic_type", None)
                 ]
@@ -1245,6 +1239,8 @@ class RosbridgeService:
             if not msg_type or msg_type == "unknown":
                 logger.error(f"Cannot publish to {topic_name}: unknown message type")
                 return False
+
+            msg_type = canonical_message_type(msg_type)
 
             # REST 请求可能并发发布到同一 topic。每个请求必须持有独立 owner，
             # 否则先结束的请求会移除共享 owner，并销毁仍被其他请求使用的 Publisher。
@@ -1545,6 +1541,8 @@ class RosbridgeService:
     ) -> None:
         if not self.node:
             raise RuntimeError("ROS2 node not initialized")
+
+        msg_type = canonical_message_type(msg_type)
 
         if topic in self.publishers:
             record = self.publishers[topic]

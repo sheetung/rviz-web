@@ -241,7 +241,7 @@ class ConnectionManager:
             raise
         except Exception as error:
             logger.error("Failed to send message to %s: %s", client_id, error)
-            # 保留 connection_info，交给 RosbridgeService 的 finally 释放
+            # 保留 connection_info，交给具体 ROS 服务的 finally 释放
             # 该客户端持有的 ROS 订阅和发布者。
             await self._close_client_socket(
                 client_id,

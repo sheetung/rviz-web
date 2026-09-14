@@ -2,9 +2,11 @@
 ROS2 数据模型
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional, Dict, Any
 from datetime import datetime
+
+from ..core.ros_types import canonical_message_type
 
 
 class TopicInfo(BaseModel):
@@ -21,6 +23,11 @@ class TopicInfo(BaseModel):
         None,
         description="后端最近一次订阅或主动采样收到消息的 UTC 时间，未观测时为 null",
     )
+
+    @field_validator("message_type")
+    @classmethod
+    def normalize_message_type(cls, value: str) -> str:
+        return canonical_message_type(value)
 
 
 class NodeInfo(BaseModel):

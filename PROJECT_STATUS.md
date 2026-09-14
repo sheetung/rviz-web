@@ -16,8 +16,13 @@
 每个 Display 独立选择稀疏显示。完整模式仍保留全部点，稀疏模式不改变网络载荷。
 
 当前最可靠的运行方式是 `./start.sh sync` 后执行 `./start.sh local`。Dockerfile
-已按 Node 22、uv 锁文件与 Nginx 同源代理重写，但 DDS 容器网络仍需要在目标
-设备上集成验证。
+已按 Node 22、uv 锁文件与 Nginx 同源代理重写，并提供 Compose host 网络部署；
+DDS 容器网络仍需要在目标设备上集成验证。
+
+后端已开始按多 ROS 版本方向整理边界：FastAPI 入口依赖 `RosService` 应用契约，
+当前 rclpy 实现明确为 `Ros2Service`；消息类型在系统内部统一为
+`package/msg/Type`，ROS1 两段式类型只在输入边界转换。ROS1 适配器尚未实现，
+下一步仍需把 WebSocket 会话编排和 ROS2 中间件操作从当前大服务中进一步拆开。
 
 ## 已实现并在当前代码中保留的能力
 
@@ -40,6 +45,11 @@
 ### ROS2 与通信
 
 - 后端使用 rclpy 直接访问 ROS2 图。
+- FastAPI/API 层通过 `RosService` 契约访问当前 ROS 实现，不再直接依赖具体 ROS2 类。
+- 当前具体实现命名为 `Ros2Service`，并显式声明 `middleware="ros2"`。
+- ROS 消息类型在入口、图发现和发布/订阅路径统一规范为 `package/msg/Type`；
+  ROS1 的 `package/Type` 输入可转换，但不会作为内部状态继续传播。
+- 消息转换器只依赖系统设置，不再反向持有整个 ROS2 服务。
 - FastAPI `/ws` 提供浏览器实时通信入口。
 - WebSocket 使用应用层 `ping/pong` 测量真实往返延迟，状态栏不再展示固定网络数值。
 - 后端通过 `ros2 topic list -t --no-daemon` 查询话题，不创建或依赖可能残留的 ROS2 CLI daemon。
@@ -118,9 +128,19 @@
 ### Docker 仍需 ROS2 网络集成验证
 
 - `start.sh` 没有 `docker` 子命令。
-- 仓库没有 `docker-compose.yml`。
+- 仓库提供 `docker-compose.yml`，使用 Linux host 网络、配置目录挂载、自动重启和
+  日志轮转。
 - Dockerfile 已修复前端 Node 版本、开发依赖构建、后端锁文件安装、同源 WebSocket
   和健康检查；DDS 发现和宿主机网络模式仍需按部署环境验证。
+
+### ROS 服务拆分仍在进行
+
+- `RosService` 已形成应用层公共契约，但 WebSocket handler 目前仍调用
+  `Ros2Service` 的私有订阅和 publisher 所有权方法。
+- `ros2_service.py` 仍同时负责 ROS2 生命周期、图发现、QoS、消息队列和 WebSocket
+  会话编排，后续需要按 Gateway 与 ROS2 Adapter 拆分。
+- 前端仍有 ROS2 名称和规范消息类型常量；接入 ROS1 前应将连接来源和中间件名称
+  作为服务元数据提供，渲染组件只消费规范消息。
 
 ### ROS2 发行版与工作空间差异
 
@@ -175,6 +195,13 @@ uv run python -m compileall -q app
 - 增加 WebSocket 发布/订阅和重连的集成测试。
 - 在真实 ROS2 图中覆盖自定义消息、QoS 不匹配和高频点云。
 
+### P1：后端 ROS 边界
+
+- 将 WebSocket 会话、连接所有权和操作响应提取为独立 Gateway。
+- 将 rclpy 节点、QoS、图发现、订阅发布和 spin 生命周期收敛到 ROS2 Adapter。
+- 禁止协议层调用 ROS2 Adapter 私有方法，以契约测试固定公共行为。
+- 完成上述边界后，再以独立进程或容器实现 ROS1 Adapter。
+
 ### P2：TF 与性能
 
 - 评估 TF 外推容差和错误展示，使行为更接近 tf2/RViz。
@@ -198,5 +225,5 @@ uv run python -m compileall -q app
 - 核心 3D 显示：可用，TF 已支持有限历史与插值，外推语义仍有限；截图可用，录像采用浏览器原生 WebM。
 - `.rvizweb` 配置管理：已实现，存储与前端变更状态已有单元测试，组件和端到端覆盖仍不足。
 - Docker 部署：构建链路已重写，DDS 网络尚未做目标设备集成验证。
-- 自动化测试：当前前端 18 个测试文件、后端 66 项通过，组件、端到端与 ROS2
+- 自动化测试：当前前端 18 个测试文件、后端 87 项通过，组件、端到端与 ROS2
   集成覆盖仍不足。

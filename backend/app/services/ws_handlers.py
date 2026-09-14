@@ -10,10 +10,11 @@ from typing import TYPE_CHECKING
 
 from fastapi.encoders import jsonable_encoder
 
+from ..core.ros_types import canonical_message_type
 from ..core.security import ensure_ros_operation_allowed
 
 if TYPE_CHECKING:
-    from .rosbridge import RosbridgeService
+    from .ros2_service import Ros2Service
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 class WebSocketRequestHandler:
     """WebSocket 请求分发器和处理器"""
 
-    def __init__(self, service: RosbridgeService):
+    def __init__(self, service: Ros2Service):
         self._svc = service
 
     async def handle_operation(self, client_id: str, message: dict):
@@ -95,6 +96,11 @@ class WebSocketRequestHandler:
                 "subscribe",
                 topic,
             )
+            if msg_type:
+                message = {
+                    **message,
+                    "type": canonical_message_type(msg_type),
+                }
             success = await self._svc._handle_subscribe(client_id, message)
             if not success:
                 raise RuntimeError(f"无法订阅 ROS topic: {topic}")
@@ -142,6 +148,7 @@ class WebSocketRequestHandler:
             )
             return
         try:
+            msg_type = canonical_message_type(msg_type)
             ensure_ros_operation_allowed(
                 self._svc.settings,
                 "publish",
@@ -207,6 +214,9 @@ class WebSocketRequestHandler:
             resolved_type = msg_type or (
                 publisher_record.get("msg_type") if publisher_record else None
             )
+            if not resolved_type:
+                raise ValueError("发布消息时缺少 type，且该 topic 尚未声明发布者")
+            resolved_type = canonical_message_type(resolved_type)
             ensure_ros_operation_allowed(
                 self._svc.settings,
                 "publish",

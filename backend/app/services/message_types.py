@@ -6,6 +6,8 @@ ROS2 消息类型注册表与解析
 import importlib
 import logging
 
+from ..core.ros_types import canonical_message_type
+
 logger = logging.getLogger(__name__)
 
 # 常用消息类型注册表
@@ -84,6 +86,12 @@ OPTIONAL_MESSAGE_TYPES: dict[str, tuple[str, str]] = {
 
 def get_message_class(msg_type: str):
     """解析 ROS2 消息类型字符串为对应的 Python 类"""
+    try:
+        msg_type = canonical_message_type(msg_type)
+    except ValueError as error:
+        logger.warning("Invalid ROS message type: %s", error)
+        return None
+
     if msg_type in MESSAGE_TYPE_REGISTRY:
         module_name, class_name = MESSAGE_TYPE_REGISTRY[msg_type]
         try:

@@ -6,10 +6,7 @@ ROS2 消息与字典的双向转换
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from .rosbridge import RosbridgeService
+from ..core.config import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +25,8 @@ class MessageConverter:
         8: 8,
     }
 
-    def __init__(self, service: RosbridgeService):
-        self._svc = service
+    def __init__(self, settings: Settings):
+        self._settings = settings
 
     def to_dict(self, msg) -> dict:
         """将 ROS 消息转换为字典"""
@@ -420,7 +417,7 @@ class MessageConverter:
 
             # 处理点云数据
             if len(pointcloud_msg.data) > 0:
-                max_bytes = self._svc.settings.ros_pointcloud_max_bytes
+                max_bytes = self._settings.ros_pointcloud_max_bytes
                 if len(pointcloud_msg.data) > max_bytes:
                     return {
                         **result,
@@ -450,7 +447,7 @@ class MessageConverter:
                     self._compact_pointcloud_data(
                         pointcloud_msg,
                         fields,
-                        self._svc.settings.ros_pointcloud_xyz_only,
+                        self._settings.ros_pointcloud_xyz_only,
                     )
                 )
                 compact_xyz = (
@@ -505,7 +502,7 @@ class MessageConverter:
             }
 
             data_size = len(image_msg.data)
-            max_bytes = self._svc.settings.ros_image_max_bytes
+            max_bytes = self._settings.ros_image_max_bytes
             if data_size > max_bytes:
                 result["error"] = (
                     f"Image 数据为 {data_size} 字节，超过上限 {max_bytes} 字节"
@@ -541,7 +538,7 @@ class MessageConverter:
             }
 
             data_size = len(image_msg.data)
-            max_bytes = self._svc.settings.ros_image_max_bytes
+            max_bytes = self._settings.ros_image_max_bytes
             if data_size > max_bytes:
                 result["error"] = (
                     f"CompressedImage 数据为 {data_size} 字节，"

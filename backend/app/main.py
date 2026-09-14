@@ -17,7 +17,7 @@ from .api.v1 import configs, ros, video
 from .core.config import get_settings
 from .core.security import origin_is_allowed
 from .core.version import BACKEND_VERSION
-from .services.dependencies import get_rosbridge_service
+from .services.dependencies import get_ros_service
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -31,7 +31,7 @@ DOCS_ASSETS_DIR = Path(__file__).resolve().parent / "static" / "swagger-ui"
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     logger.info("Starting RViz Web Visualization System")
-    service = get_rosbridge_service()
+    service = get_ros_service()
     await service.start()
     logger.info("Server started")
     try:
@@ -107,7 +107,7 @@ async def openapi_schema():
     return JSONResponse(app.openapi())
 
 
-# 全局 Rosbridge 服务实例将通过依赖注入管理
+# 全局 ROS 服务实例通过依赖注入管理
 
 # 注册 API 路由
 app.include_router(ros.router, prefix="/api/v1", tags=["ROS"])
@@ -145,7 +145,7 @@ async def websocket_endpoint(websocket: WebSocket):
     if not origin_is_allowed(websocket.headers.get("origin"), settings):
         await websocket.close(code=4403, reason="Origin not allowed")
         return
-    service = get_rosbridge_service()
+    service = get_ros_service()
     await service.handle_websocket(websocket)
 
 

@@ -6,6 +6,8 @@
 
 ### Changed
 
+- 后端新增 `RosService` 应用契约，当前 rclpy 实现明确为 `Ros2Service`，FastAPI 路由不再直接依赖具体 ROS2 类。
+- ROS 消息类型统一规范为 `package/msg/Type`，边界可接收并转换 ROS1 `package/Type`；消息转换器解除对完整 ROS 服务的反向依赖。
 - 新增简洁的 Docker Compose 部署，使用 Linux host 网络接入 ROS2 DDS，并加入配置持久化、健康检查、自动重启和日志轮转。
 - Docker 构建支持应用标题和启动配置名，Nginx 访问及错误日志统一输出到容器日志，并缩小构建上下文。
 - 前端和后端改为独立版本，分别使用 `frontend-v*` 和 `backend-v*` Git 标签；移除根目录统一 `VERSION` 文件。

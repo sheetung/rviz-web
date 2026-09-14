@@ -11,7 +11,7 @@ RVizWeb 是一个面向 ROS2 的浏览器可视化工具。前端使用 Vue 3、
 ```text
 浏览器
   ├── HTTP /api/v1/*  ── FastAPI ── 配置文件与 ROS2 查询接口
-  └── WebSocket /ws  ── RosbridgeService ── rclpy ── ROS2 图
+  └── WebSocket /ws  ── RosService ── Ros2Service/rclpy ── ROS2 图
 ```
 
 - 前端：Vue 3、Vite、Three.js、Element Plus、Pinia。
@@ -19,6 +19,41 @@ RVizWeb 是一个面向 ROS2 的浏览器可视化工具。前端使用 Vue 3、
 - Python 依赖：由 `backend/pyproject.toml`、`backend/uv.lock` 和 uv 管理。
 - 前端依赖：由 `frontend/package.json`、`frontend/package-lock.json` 和 npm 管理。
 - 可视化配置：保存在 `rvizweb_configs/*.rvizweb`。
+
+## 后端边界与演进规范
+
+后端按以下方向演进，ROS1 和其他数据源不得直接通过条件分支混入 ROS2 实现：
+
+```text
+FastAPI / WebSocket 入口
+          │
+          ▼
+RosService 应用契约
+          │
+          ├── Ros2Service（当前，rclpy）
+          └── Ros1Service（规划，独立运行环境）
+```
+
+边界规则：
+
+1. `main.py` 和 `api/` 只能依赖 `services/ros_contract.py` 定义的公共契约，
+   具体实现由 `services/dependencies.py` 创建。
+2. 浏览器、配置文件和后端内部的消息类型统一使用 `package/msg/Type`。
+   ROS1 的 `package/Type` 只能出现在适配器输入边界，并立即规范化。
+3. ROS2 的 rclpy、QoS、DDS、图发现和 spin 生命周期只属于 `Ros2Service`
+   及其 ROS2 专用辅助模块；公共模型和 API 不得导入 rclpy。
+4. 消息转换器只依赖系统设置和消息对象，不依赖具体 ROS 服务实例。
+5. WebSocket 操作名和响应结构属于应用协议，不以 ROS1/ROS2 类型字符串差异
+   建立两套前端协议。
+
+当前第一阶段已经引入 `RosService`、明确 `Ros2Service` 具体实现，并在
+`core/ros_types.py` 集中处理消息类型规范化。后续阶段依次为：
+
+1. 将 WebSocket 会话编排从 `Ros2Service` 提取为独立 Gateway，停止调用服务私有方法。
+2. 将 ROS2 图发现、订阅发布、QoS 和生命周期拆入 `services/ros2/`。
+3. 为 Gateway 和 ROS 适配器增加契约测试。
+4. 最后在独立 ROS1 进程或容器中实现相同契约，并增加 `/ws/ros1`、`/ws/ros2`
+   明确入口；不在同一 Python 进程混合加载 rospy 与 rclpy。
 
 ## 环境要求
 

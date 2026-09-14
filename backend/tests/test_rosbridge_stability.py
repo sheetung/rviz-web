@@ -6,11 +6,11 @@ import pytest
 from rclpy.qos import QoSHistoryPolicy
 
 from app.models.ros import ConnectionInfo
-from app.services.rosbridge import RosbridgeService
+from app.services.ros2_service import Ros2Service
 
 
 def test_client_ids_are_unique_under_connection_bursts(settings):
-    service = RosbridgeService(settings)
+    service = Ros2Service(settings)
 
     client_ids = {service._new_client_id() for _ in range(10_000)}
 
@@ -24,7 +24,7 @@ async def test_message_cache_does_not_retain_serialized_payloads(settings, monke
         return function(*args)
 
     monkeypatch.setattr(asyncio, "to_thread", run_inline)
-    service = RosbridgeService(settings)
+    service = Ros2Service(settings)
     service.connection_manager.connection_info["client-1"] = ConnectionInfo(
         client_id="client-1",
         connected_at=datetime.now(),
@@ -49,7 +49,7 @@ async def test_message_cache_does_not_retain_serialized_payloads(settings, monke
 
 def test_pointcloud_forward_rate_is_limited_before_conversion(settings):
     limited_settings = settings.model_copy(update={"ros_pointcloud_max_hz": 10.0})
-    service = RosbridgeService(limited_settings)
+    service = Ros2Service(limited_settings)
     service._subscription_types["/points"] = "sensor_msgs/msg/PointCloud2"
 
     assert service._claim_topic_forward_slot("/points", now=1.0)
@@ -59,7 +59,7 @@ def test_pointcloud_forward_rate_is_limited_before_conversion(settings):
 
 
 def test_high_bandwidth_sensor_qos_keeps_only_latest_sample(settings):
-    service = RosbridgeService(settings)
+    service = Ros2Service(settings)
     keep_all_publisher = Mock(history=QoSHistoryPolicy.KEEP_ALL)
 
     history, depth = service._subscriber_history_settings(

@@ -5,12 +5,12 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from app.models.ros import ConnectionInfo, SystemStatus
-from app.services.rosbridge import RosbridgeService
+from app.services.ros2_service import Ros2Service
 
 
 @pytest.mark.asyncio
 async def test_ping_returns_matching_pong(settings):
-    service = RosbridgeService(settings)
+    service = Ros2Service(settings)
     service.connection_manager.send_to_client = AsyncMock()
 
     await service._handle_message("client-1", {"op": "ping", "id": "ping-42"})
@@ -23,7 +23,7 @@ async def test_ping_returns_matching_pong(settings):
 
 @pytest.mark.asyncio
 async def test_system_status_returns_over_websocket(settings):
-    service = RosbridgeService(settings)
+    service = Ros2Service(settings)
     service.connection_manager.send_to_client = AsyncMock()
     service.get_system_status = AsyncMock(
         return_value=SystemStatus(
@@ -66,7 +66,7 @@ async def test_system_status_returns_over_websocket(settings):
 
 @pytest.mark.asyncio
 async def test_publish_success_is_acknowledged_after_ros_publish(settings):
-    service = RosbridgeService(settings)
+    service = Ros2Service(settings)
     service.node = Mock()
     publisher = Mock()
 
@@ -93,12 +93,15 @@ async def test_publish_success_is_acknowledged_after_ros_publish(settings):
             "op": "publish",
             "id": "publish-1",
             "topic": "/goal_pose",
-            "type": "geometry_msgs/msg/PoseStamped",
+            "type": "geometry_msgs/PoseStamped",
             "msg": {"pose": {}},
         },
     )
 
     publisher.publish.assert_called_once_with(ros_message)
+    assert service.connection_manager.connection_info[
+        "client-1"
+    ].advertised_topics["/goal_pose"] == "geometry_msgs/msg/PoseStamped"
     service.connection_manager.send_to_client.assert_awaited_once_with(
         "client-1",
         {
@@ -112,7 +115,7 @@ async def test_publish_success_is_acknowledged_after_ros_publish(settings):
 
 @pytest.mark.asyncio
 async def test_publish_conversion_failure_returns_matching_error(settings):
-    service = RosbridgeService(settings)
+    service = Ros2Service(settings)
     service.node = Mock()
 
     class FakeMessage:
@@ -153,7 +156,7 @@ async def test_publish_conversion_failure_returns_matching_error(settings):
 
 @pytest.mark.asyncio
 async def test_concurrent_publisher_owners_share_one_ros_publisher(settings):
-    service = RosbridgeService(settings)
+    service = Ros2Service(settings)
     service.node = Mock()
     publisher = Mock()
     service.node.create_publisher.return_value = publisher
@@ -177,7 +180,7 @@ async def test_concurrent_publisher_owners_share_one_ros_publisher(settings):
 
 @pytest.mark.asyncio
 async def test_rest_publish_releases_temporary_publisher(settings):
-    service = RosbridgeService(settings)
+    service = Ros2Service(settings)
     service.node = Mock()
     publisher = Mock()
     service.node.create_publisher.return_value = publisher
@@ -197,7 +200,7 @@ async def test_rest_publish_releases_temporary_publisher(settings):
 
 @pytest.mark.asyncio
 async def test_concurrent_rest_publishes_keep_shared_publisher_alive(settings):
-    service = RosbridgeService(settings)
+    service = Ros2Service(settings)
     service.node = Mock()
     publisher = Mock()
     service.node.create_publisher.return_value = publisher
@@ -239,7 +242,7 @@ async def test_concurrent_rest_publishes_keep_shared_publisher_alive(settings):
 
 @pytest.mark.asyncio
 async def test_client_publisher_is_destroyed_on_disconnect(settings):
-    service = RosbridgeService(settings)
+    service = Ros2Service(settings)
     publisher = object()
     service.node = Mock()
     service.publishers["/goal_pose"] = {

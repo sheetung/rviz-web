@@ -5,7 +5,6 @@ from unittest.mock import Mock
 from geometry_msgs.msg import Pose, PoseStamped, PoseWithCovarianceStamped, Twist
 
 from app.services.message_converter import MessageConverter
-from app.services.rosbridge import RosbridgeService
 
 
 def test_ros_message_slots_are_exposed_as_public_field_names():
@@ -13,8 +12,8 @@ def test_ros_message_slots_are_exposed_as_public_field_names():
     message.header.frame_id = "map"
     message.pose.position.x = 1.5
 
-    service = object.__new__(RosbridgeService)
-    result = service._message_to_dict(message)
+    converter = MessageConverter(SimpleNamespace())
+    result = converter.to_dict(message)
 
     assert result["header"]["frame_id"] == "map"
     assert result["pose"]["position"]["x"] == 1.5
@@ -24,8 +23,8 @@ def test_ros_message_slots_are_exposed_as_public_field_names():
 
 
 def test_pose_stamped_dictionary_preserves_all_position_axes():
-    service = object.__new__(RosbridgeService)
-    result = service._dict_to_message(
+    converter = MessageConverter(SimpleNamespace())
+    result = converter.from_dict(
         PoseStamped,
         {
             "header": {"frame_id": "world"},
@@ -42,23 +41,23 @@ def test_pose_stamped_dictionary_preserves_all_position_axes():
 
 
 def test_integer_json_values_are_coerced_for_other_ros_float_fields():
-    service = object.__new__(RosbridgeService)
+    converter = MessageConverter(SimpleNamespace())
 
-    pose = service._dict_to_message(
+    pose = converter.from_dict(
         Pose,
         {
             "position": {"x": 1, "y": 0, "z": -2},
             "orientation": {"x": 0, "y": 0, "z": 0, "w": 1},
         },
     )
-    twist = service._dict_to_message(
+    twist = converter.from_dict(
         Twist,
         {
             "linear": {"x": 2, "y": 0, "z": -1},
             "angular": {"x": 0, "y": 0, "z": 1},
         },
     )
-    initial_pose = service._dict_to_message(
+    initial_pose = converter.from_dict(
         PoseWithCovarianceStamped,
         {
             "pose": {
@@ -81,16 +80,14 @@ def test_integer_json_values_are_coerced_for_other_ros_float_fields():
 
 
 def test_unknown_ros_message_field_fails_conversion():
-    service = object.__new__(RosbridgeService)
+    converter = MessageConverter(SimpleNamespace())
 
-    assert service._dict_to_message(Pose, {"not_a_pose_field": 1}) is None
+    assert converter.from_dict(Pose, {"not_a_pose_field": 1}) is None
 
 
 def test_compressed_image_size_limit_is_enforced():
-    fake_service = SimpleNamespace(
-        settings=SimpleNamespace(ros_image_max_bytes=4),
-    )
-    converter = MessageConverter(fake_service)
+    settings = SimpleNamespace(ros_image_max_bytes=4)
+    converter = MessageConverter(settings)
     converter.to_dict = Mock(return_value={"frame_id": "camera"})
     image = SimpleNamespace(
         header=object(),
@@ -105,13 +102,11 @@ def test_compressed_image_size_limit_is_enforced():
 
 
 def test_pointcloud_retains_all_points_and_compacts_to_xyz():
-    fake_service = SimpleNamespace(
-        settings=SimpleNamespace(
-            ros_pointcloud_max_bytes=10_000,
-            ros_pointcloud_xyz_only=True,
-        ),
+    settings = SimpleNamespace(
+        ros_pointcloud_max_bytes=10_000,
+        ros_pointcloud_xyz_only=True,
     )
-    converter = MessageConverter(fake_service)
+    converter = MessageConverter(settings)
     converter.to_dict = Mock(return_value={"frame_id": "lidar"})
     fields = [
         SimpleNamespace(name="x", offset=0, datatype=7, count=1),

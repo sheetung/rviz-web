@@ -15,8 +15,8 @@ def settings():
 
 
 @pytest.fixture
-def mock_rosbridge_service():
-    """模拟 Rosbridge 服务"""
+def mock_ros_service():
+    """模拟 ROS 服务"""
     mock_service = Mock()
     mock_service.get_topics.return_value = []
     mock_service.get_nodes.return_value = []

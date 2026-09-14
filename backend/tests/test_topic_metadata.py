@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.models.ros import TopicInfo
-from app.services.rosbridge import RosbridgeService
+from app.services.ros2_service import Ros2Service
 
 
 class FakeGraphNode:
@@ -47,7 +47,7 @@ class FakeSamplingNode(FakeGraphNode):
 async def test_topics_include_graph_and_observed_message_metadata(
     settings, monkeypatch
 ):
-    service = RosbridgeService(settings)
+    service = Ros2Service(settings)
     service.node = FakeGraphNode()
     monkeypatch.setattr(
         service,
@@ -61,7 +61,7 @@ async def test_topics_include_graph_and_observed_message_metadata(
             ]
         ),
     )
-    monkeypatch.setattr("app.services.rosbridge.time.time", lambda: 1000.0)
+    monkeypatch.setattr("app.services.ros2_service.time.time", lambda: 1000.0)
     service.subscribers["/points"] = object()
     service._topic_observation_started_at["/points"] = 990.0
     service._topic_message_times["/points"] = deque([999.8, 999.9, 1000.0])
@@ -81,9 +81,9 @@ async def test_topics_include_graph_and_observed_message_metadata(
 async def test_frequencies_distinguish_measured_zero_from_unobserved(
     settings, monkeypatch
 ):
-    service = RosbridgeService(settings)
+    service = Ros2Service(settings)
     service.node = FakeGraphNode()
-    monkeypatch.setattr("app.services.rosbridge.time.time", lambda: 1000.0)
+    monkeypatch.setattr("app.services.ros2_service.time.time", lambda: 1000.0)
     service.subscribers["/idle"] = object()
     service._topic_observation_started_at["/idle"] = 990.0
     service.subscribers["/points"] = object()
@@ -101,13 +101,13 @@ async def test_frequencies_distinguish_measured_zero_from_unobserved(
 async def test_frequency_endpoint_actively_samples_published_topics(
     settings, monkeypatch
 ):
-    service = RosbridgeService(settings)
+    service = Ros2Service(settings)
     service.node = FakeSamplingNode()
     monotonic_times = iter([100.0, 100.1, 100.2])
 
     monkeypatch.setattr(service, "_get_message_class", lambda _message_type: object)
     monkeypatch.setattr(service, "_frequency_clock", lambda: next(monotonic_times))
-    monkeypatch.setattr("app.services.rosbridge.time.time", lambda: 1000.0)
+    monkeypatch.setattr("app.services.ros2_service.time.time", lambda: 1000.0)
 
     async def emit_samples(_duration):
         callback = service.node.callbacks["/points"]
@@ -115,7 +115,7 @@ async def test_frequency_endpoint_actively_samples_published_topics(
         callback(b"second")
         callback(b"third")
 
-    monkeypatch.setattr("app.services.rosbridge.asyncio.sleep", emit_samples)
+    monkeypatch.setattr("app.services.ros2_service.asyncio.sleep", emit_samples)
 
     frequencies = await service.get_topic_frequencies(sample_duration=1.0)
 
@@ -129,7 +129,7 @@ async def test_frequency_endpoint_actively_samples_published_topics(
 
 @pytest.mark.asyncio
 async def test_websocket_topics_encode_last_message_time(settings, monkeypatch):
-    service = RosbridgeService(settings)
+    service = Ros2Service(settings)
     topic = TopicInfo(
         name="/points",
         message_type="sensor_msgs/msg/PointCloud2",
