@@ -4,7 +4,7 @@ from unittest.mock import Mock
 
 from geometry_msgs.msg import Pose, PoseStamped, PoseWithCovarianceStamped, Twist
 
-from app.services.message_converter import MessageConverter
+from app.services.ros2.message_converter import MessageConverter
 
 
 def test_ros_message_slots_are_exposed_as_public_field_names():

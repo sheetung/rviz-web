@@ -5,17 +5,22 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from app.models.ros import ConnectionInfo, SystemStatus
-from app.services.ros2_service import Ros2Service
+from app.services.ros2.adapter import Ros2Adapter
+from app.services.ros_application import RosApplication
+from app.services.ros_gateway import RosGateway
+from app.services.connection_manager import ConnectionManager
 
 
 @pytest.mark.asyncio
 async def test_ping_returns_matching_pong(settings):
-    service = Ros2Service(settings)
-    service.connection_manager.send_to_client = AsyncMock()
+    service = Ros2Adapter(settings)
+    application = RosApplication(settings, service, ConnectionManager())
+    gateway = RosGateway(settings, application, application.connection_manager)
+    application.connection_manager.send_to_client = AsyncMock()
 
-    await service._handle_message("client-1", {"op": "ping", "id": "ping-42"})
+    await gateway.handle_message("client-1", {"op": "ping", "id": "ping-42"})
 
-    service.connection_manager.send_to_client.assert_awaited_once_with(
+    application.connection_manager.send_to_client.assert_awaited_once_with(
         "client-1",
         {"op": "pong", "id": "ping-42"},
     )
@@ -23,9 +28,11 @@ async def test_ping_returns_matching_pong(settings):
 
 @pytest.mark.asyncio
 async def test_system_status_returns_over_websocket(settings):
-    service = Ros2Service(settings)
-    service.connection_manager.send_to_client = AsyncMock()
-    service.get_system_status = AsyncMock(
+    service = Ros2Adapter(settings)
+    application = RosApplication(settings, service, ConnectionManager())
+    gateway = RosGateway(settings, application, application.connection_manager)
+    application.connection_manager.send_to_client = AsyncMock()
+    application.get_system_status = AsyncMock(
         return_value=SystemStatus(
             ros_domain_id=0,
             active_nodes=3,
@@ -39,12 +46,12 @@ async def test_system_status_returns_over_websocket(settings):
         )
     )
 
-    await service._handle_message(
+    await gateway.handle_message(
         "client-1",
         {"op": "get_system_status", "id": "status-7"},
     )
 
-    service.connection_manager.send_to_client.assert_awaited_once_with(
+    application.connection_manager.send_to_client.assert_awaited_once_with(
         "client-1",
         {
             "op": "get_system_status_result",
@@ -66,7 +73,9 @@ async def test_system_status_returns_over_websocket(settings):
 
 @pytest.mark.asyncio
 async def test_publish_success_is_acknowledged_after_ros_publish(settings):
-    service = Ros2Service(settings)
+    service = Ros2Adapter(settings)
+    application = RosApplication(settings, service, ConnectionManager())
+    gateway = RosGateway(settings, application, application.connection_manager)
     service.node = Mock()
     publisher = Mock()
 
@@ -79,15 +88,15 @@ async def test_publish_success_is_acknowledged_after_ros_publish(settings):
         "msg_type": "geometry_msgs/msg/PoseStamped",
         "owners": set(),
     }
-    service.connection_manager.connection_info["client-1"] = ConnectionInfo(
+    application.connection_manager.connection_info["client-1"] = ConnectionInfo(
         client_id="client-1",
         connected_at=datetime.now(),
     )
-    service.connection_manager.send_to_client = AsyncMock()
+    application.connection_manager.send_to_client = AsyncMock()
     ros_message = object()
     service._converter.from_dict = Mock(return_value=ros_message)
 
-    await service._handle_message(
+    await gateway.handle_message(
         "client-1",
         {
             "op": "publish",
@@ -99,10 +108,13 @@ async def test_publish_success_is_acknowledged_after_ros_publish(settings):
     )
 
     publisher.publish.assert_called_once_with(ros_message)
-    assert service.connection_manager.connection_info[
-        "client-1"
-    ].advertised_topics["/goal_pose"] == "geometry_msgs/msg/PoseStamped"
-    service.connection_manager.send_to_client.assert_awaited_once_with(
+    assert (
+        application.connection_manager.connection_info["client-1"].advertised_topics[
+            "/goal_pose"
+        ]
+        == "geometry_msgs/msg/PoseStamped"
+    )
+    application.connection_manager.send_to_client.assert_awaited_once_with(
         "client-1",
         {
             "op": "publish_result",
@@ -115,7 +127,9 @@ async def test_publish_success_is_acknowledged_after_ros_publish(settings):
 
 @pytest.mark.asyncio
 async def test_publish_conversion_failure_returns_matching_error(settings):
-    service = Ros2Service(settings)
+    service = Ros2Adapter(settings)
+    application = RosApplication(settings, service, ConnectionManager())
+    gateway = RosGateway(settings, application, application.connection_manager)
     service.node = Mock()
 
     class FakeMessage:
@@ -127,14 +141,14 @@ async def test_publish_conversion_failure_returns_matching_error(settings):
         "msg_type": "geometry_msgs/msg/PoseStamped",
         "owners": set(),
     }
-    service.connection_manager.send_to_client = AsyncMock()
+    application.connection_manager.send_to_client = AsyncMock()
     service._converter.from_dict = Mock(return_value=None)
-    service.connection_manager.connection_info["client-1"] = ConnectionInfo(
+    application.connection_manager.connection_info["client-1"] = ConnectionInfo(
         client_id="client-1",
         connected_at=datetime.now(),
     )
 
-    await service._handle_message(
+    await gateway.handle_message(
         "client-1",
         {
             "op": "publish",
@@ -145,29 +159,29 @@ async def test_publish_conversion_failure_returns_matching_error(settings):
         },
     )
 
-    response = service.connection_manager.send_to_client.await_args.args[1]
+    response = application.connection_manager.send_to_client.await_args.args[1]
     assert response["op"] == "error"
     assert response["id"] == "publish-failed"
     assert (
         "/goal_pose"
-        in service.connection_manager.connection_info["client-1"].advertised_topics
+        in application.connection_manager.connection_info["client-1"].advertised_topics
     )
 
 
 @pytest.mark.asyncio
 async def test_concurrent_publisher_owners_share_one_ros_publisher(settings):
-    service = Ros2Service(settings)
+    service = Ros2Adapter(settings)
     service.node = Mock()
     publisher = Mock()
     service.node.create_publisher.return_value = publisher
 
     await asyncio.gather(
-        service._ensure_publisher(
+        service.acquire_publisher(
             "/goal_pose",
             "geometry_msgs/msg/PoseStamped",
             "client-1",
         ),
-        service._ensure_publisher(
+        service.acquire_publisher(
             "/goal_pose",
             "geometry_msgs/msg/PoseStamped",
             "client-2",
@@ -180,7 +194,7 @@ async def test_concurrent_publisher_owners_share_one_ros_publisher(settings):
 
 @pytest.mark.asyncio
 async def test_rest_publish_releases_temporary_publisher(settings):
-    service = Ros2Service(settings)
+    service = Ros2Adapter(settings)
     service.node = Mock()
     publisher = Mock()
     service.node.create_publisher.return_value = publisher
@@ -200,13 +214,13 @@ async def test_rest_publish_releases_temporary_publisher(settings):
 
 @pytest.mark.asyncio
 async def test_concurrent_rest_publishes_keep_shared_publisher_alive(settings):
-    service = Ros2Service(settings)
+    service = Ros2Adapter(settings)
     service.node = Mock()
     publisher = Mock()
     service.node.create_publisher.return_value = publisher
     service._converter.from_dict = Mock(side_effect=lambda _type, message: message)
 
-    original_ensure = service._ensure_publisher
+    original_ensure = service.acquire_publisher
     both_owners_registered = asyncio.Event()
     registered_count = 0
 
@@ -218,7 +232,7 @@ async def test_concurrent_rest_publishes_keep_shared_publisher_alive(settings):
             both_owners_registered.set()
         await both_owners_registered.wait()
 
-    service._ensure_publisher = ensure_then_wait
+    service.acquire_publisher = ensure_then_wait
 
     results = await asyncio.gather(
         service.publish_message(
@@ -242,7 +256,8 @@ async def test_concurrent_rest_publishes_keep_shared_publisher_alive(settings):
 
 @pytest.mark.asyncio
 async def test_client_publisher_is_destroyed_on_disconnect(settings):
-    service = Ros2Service(settings)
+    service = Ros2Adapter(settings)
+    application = RosApplication(settings, service, ConnectionManager())
     publisher = object()
     service.node = Mock()
     service.publishers["/goal_pose"] = {
@@ -251,7 +266,7 @@ async def test_client_publisher_is_destroyed_on_disconnect(settings):
         "msg_type": "geometry_msgs/msg/PoseStamped",
         "owners": {"client-1"},
     }
-    service.connection_manager.connection_info["client-1"] = ConnectionInfo(
+    application.connection_manager.connection_info["client-1"] = ConnectionInfo(
         client_id="client-1",
         connected_at=datetime.now(),
         advertised_topics={
@@ -259,7 +274,7 @@ async def test_client_publisher_is_destroyed_on_disconnect(settings):
         },
     )
 
-    await service._cleanup_client_publishers("client-1")
+    await application.cleanup_client("client-1")
 
     assert "/goal_pose" not in service.publishers
     service.node.destroy_publisher.assert_called_once_with(publisher)

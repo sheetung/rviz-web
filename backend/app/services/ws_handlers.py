@@ -6,15 +6,11 @@ WebSocket 请求分发与处理
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
-
 from fastapi.encoders import jsonable_encoder
 
-from ..core.ros_types import canonical_message_type
 from ..core.security import ensure_ros_operation_allowed
-
-if TYPE_CHECKING:
-    from .ros2_service import Ros2Service
+from .connection_manager import ConnectionManager
+from .ros_contract import RosSessionService
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +18,13 @@ logger = logging.getLogger(__name__)
 class WebSocketRequestHandler:
     """WebSocket 请求分发器和处理器"""
 
-    def __init__(self, service: Ros2Service):
+    def __init__(
+        self,
+        service: RosSessionService,
+        connection_manager: ConnectionManager,
+    ):
         self._svc = service
+        self._connections = connection_manager
 
     async def handle_operation(self, client_id: str, message: dict):
         """中心分发：根据 op 字段路由到对应的处理方法"""
@@ -47,7 +48,7 @@ class WebSocketRequestHandler:
             "get_params": self._handle_get_params,
         }
 
-        handler = dispatch.get(op)
+        handler = dispatch.get(op) if isinstance(op, str) else None
         if handler:
             # ping/subscribe/unsubscribe/advertise/unadvertise/publish 的参数签名不同
             if op == "ping":
@@ -72,7 +73,7 @@ class WebSocketRequestHandler:
         response = {"op": op, **payload}
         if request_id:
             response["id"] = request_id
-        await self._svc.connection_manager.send_to_client(client_id, response)
+        await self._connections.send_to_client(client_id, response)
 
     async def _send_error(
         self, client_id: str, request_id: str = None, error: str = ""
@@ -96,12 +97,7 @@ class WebSocketRequestHandler:
                 "subscribe",
                 topic,
             )
-            if msg_type:
-                message = {
-                    **message,
-                    "type": canonical_message_type(msg_type),
-                }
-            success = await self._svc._handle_subscribe(client_id, message)
+            success = await self._svc.subscribe_client(client_id, topic, msg_type)
             if not success:
                 raise RuntimeError(f"无法订阅 ROS topic: {topic}")
             await self._send_response(
@@ -122,10 +118,11 @@ class WebSocketRequestHandler:
         if not topic:
             await self._send_error(client_id, request_id, "缺少 ROS topic")
             return
-        info = self._svc.connection_manager.connection_info.get(client_id)
-        if info and topic in info.subscribed_topics:
-            info.subscribed_topics.remove(topic)
-            await self._svc._stop_ros_subscription_if_unused(topic)
+        try:
+            await self._svc.unsubscribe_client(client_id, topic)
+        except Exception as error:
+            await self._send_error(client_id, request_id, str(error))
+            return
         await self._send_response(
             client_id,
             request_id,
@@ -148,16 +145,16 @@ class WebSocketRequestHandler:
             )
             return
         try:
-            msg_type = canonical_message_type(msg_type)
             ensure_ros_operation_allowed(
                 self._svc.settings,
                 "publish",
                 topic,
             )
-            await self._svc._ensure_publisher(topic, msg_type, client_id)
-            info = self._svc.connection_manager.connection_info.get(client_id)
-            if info:
-                info.advertised_topics[topic] = msg_type
+            msg_type = await self._svc.advertise_client(
+                client_id,
+                topic,
+                msg_type,
+            )
             await self._send_response(
                 client_id,
                 request_id,
@@ -178,10 +175,7 @@ class WebSocketRequestHandler:
             await self._send_error(client_id, request_id, "缺少 ROS topic")
             return
         try:
-            await self._svc._release_publisher(topic, client_id)
-            info = self._svc.connection_manager.connection_info.get(client_id)
-            if info:
-                info.advertised_topics.pop(topic, None)
+            await self._svc.unadvertise_client(client_id, topic)
             await self._send_response(
                 client_id,
                 request_id,
@@ -210,42 +204,17 @@ class WebSocketRequestHandler:
             return
 
         try:
-            publisher_record = self._svc.publishers.get(topic)
-            resolved_type = msg_type or (
-                publisher_record.get("msg_type") if publisher_record else None
-            )
-            if not resolved_type:
-                raise ValueError("发布消息时缺少 type，且该 topic 尚未声明发布者")
-            resolved_type = canonical_message_type(resolved_type)
             ensure_ros_operation_allowed(
                 self._svc.settings,
                 "publish",
                 topic,
             )
-            # 即使 publisher 已存在，也要先原子地登记当前连接的所有权，
-            # 防止另一个客户端同时 unadvertise 后销毁它。
-            await self._svc._ensure_publisher(topic, resolved_type, client_id)
-
-            publisher_record = self._svc.publishers.get(topic)
-            if not publisher_record:
-                raise RuntimeError(f"Publisher for {topic} not available")
-            if publisher_record["msg_type"] != resolved_type:
-                raise ValueError(
-                    f"{topic} 已按 {publisher_record['msg_type']} 创建，"
-                    f"不能改用 {resolved_type}"
-                )
-
-            info = self._svc.connection_manager.connection_info.get(client_id)
-            if info:
-                info.advertised_topics[topic] = resolved_type
-
-            msg_class = publisher_record["msg_class"]
-            ros_msg = self._svc._converter.from_dict(msg_class, msg_data)
-            if ros_msg is None:
-                raise ValueError(f"无法把消息转换为 {msg_class.__name__}")
-
-            publisher = publisher_record["publisher"]
-            publisher.publish(ros_msg)
+            message_class_name = await self._svc.publish_client(
+                client_id,
+                topic,
+                msg_data,
+                msg_type,
+            )
             await self._send_response(
                 client_id,
                 request_id,
@@ -253,7 +222,7 @@ class WebSocketRequestHandler:
                 success=True,
                 topic=topic,
             )
-            logger.info(f"📤 Published {msg_class.__name__} to {topic}")
+            logger.info(f"📤 Published {message_class_name} to {topic}")
         except Exception as e:
             logger.error(f"❌ Error publishing to {topic}: {e}", exc_info=True)
             await self._send_error(client_id, request_id, str(e))

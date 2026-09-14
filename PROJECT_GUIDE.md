@@ -11,7 +11,7 @@ RVizWeb 是一个面向 ROS2 的浏览器可视化工具。前端使用 Vue 3、
 ```text
 浏览器
   ├── HTTP /api/v1/*  ── FastAPI ── 配置文件与 ROS2 查询接口
-  └── WebSocket /ws  ── RosService ── Ros2Service/rclpy ── ROS2 图
+  └── WebSocket /ws  ── RosGateway ── RosApplication ── Ros2Adapter/rclpy ── ROS2 图
 ```
 
 - 前端：Vue 3、Vite、Three.js、Element Plus、Pinia。
@@ -22,38 +22,36 @@ RVizWeb 是一个面向 ROS2 的浏览器可视化工具。前端使用 Vue 3、
 
 ## 后端边界与演进规范
 
-后端按以下方向演进，ROS1 和其他数据源不得直接通过条件分支混入 ROS2 实现：
+当前分层：
 
 ```text
-FastAPI / WebSocket 入口
-          │
-          ▼
-RosService 应用契约
-          │
-          ├── Ros2Service（当前，rclpy）
-          └── Ros1Service（规划，独立运行环境）
+FastAPI /ws → RosGateway（JSON、限流、连接生命周期）
+                     ↓
+HTTP API ─────→ RosApplication（权限、客户端所有权、消息转发、系统状态）
+                     ↓ RosAdapter 契约 / 规范消息回调
+                services/ros2/
+                adapter.py（节点、QoS、图发现、订阅发布、spin）
+                message_converter.py / message_types.py / frequency_tracker.py
 ```
 
-边界规则：
-
-1. `main.py` 和 `api/` 只能依赖 `services/ros_contract.py` 定义的公共契约，
-   具体实现由 `services/dependencies.py` 创建。
-2. 浏览器、配置文件和后端内部的消息类型统一使用 `package/msg/Type`。
-   ROS1 的 `package/Type` 只能出现在适配器输入边界，并立即规范化。
-3. ROS2 的 rclpy、QoS、DDS、图发现和 spin 生命周期只属于 `Ros2Service`
-   及其 ROS2 专用辅助模块；公共模型和 API 不得导入 rclpy。
-4. 消息转换器只依赖系统设置和消息对象，不依赖具体 ROS 服务实例。
-5. WebSocket 操作名和响应结构属于应用协议，不以 ROS1/ROS2 类型字符串差异
-   建立两套前端协议。
-
-当前第一阶段已经引入 `RosService`、明确 `Ros2Service` 具体实现，并在
-`core/ros_types.py` 集中处理消息类型规范化。后续阶段依次为：
-
-1. 将 WebSocket 会话编排从 `Ros2Service` 提取为独立 Gateway，停止调用服务私有方法。
-2. 将 ROS2 图发现、订阅发布、QoS 和生命周期拆入 `services/ros2/`。
-3. 为 Gateway 和 ROS 适配器增加契约测试。
-4. 最后在独立 ROS1 进程或容器中实现相同契约，并增加 `/ws/ros1`、`/ws/ros2`
-   明确入口；不在同一 Python 进程混合加载 rospy 与 rclpy。
+- 公共层不得导入 rclpy 或 ROS 消息包。具体适配器仅在
+  `dependencies.py` 创建应用时延迟加载；公共 API 可以在没有 ROS 的环境中导入。
+- ROS2 适配器不持有 WebSocket、ConnectionManager 或浏览器客户端状态。
+  它通过 `set_message_sink` 输出 `(topic, payload, message_type)`；
+  JSON 和 PointCloud2 二进制传输封装属于公共连接层。
+- 客户端订阅表、订阅数量限制、取消订阅和断线清理由公共应用层负责。
+  最后一个订阅者退出时才销毁 ROS 订阅。Publisher 通过不透明 owner 标识
+  获取/释放资源；适配器只管理资源引用，不解释客户端身份。
+- 发布时先登记资源所有权，再转换和发布；REST 发布使用独立临时 owner，
+  与 WebSocket 长期 owner 共享底层 publisher。未传 type 时只从当前会话推断。
+- 关闭顺序为结束 Gateway 会话、释放 ROS 资源、删除连接元数据、停止 ROS 节点。
+- 类型名称统一为 `package/msg/Type`；两段式名称仅在边界规范化。
+  名称规范化不代表 ROS1/ROS2 消息结构相同；未来适配器仍须处理时间、
+  Header、嵌套消息及保留消息语义。
+- 当前保持单数据源 `/ws`。ROS1 尚未实现，具体运行环境及是否需要多来源入口
+  等实际接入需求明确后决定。
+- 测试使用假适配器覆盖共享订阅、会话发布、关闭清理，并在子进程中禁止 ROS
+  导入以验证公共层边界；ROS2 实际收发另做隔离 Domain 验证。
 
 ## 环境要求
 

@@ -6,7 +6,7 @@ ROS2 消息类型注册表与解析
 import importlib
 import logging
 
-from ..core.ros_types import canonical_message_type
+from ...core.ros_types import canonical_message_type
 
 logger = logging.getLogger(__name__)
 

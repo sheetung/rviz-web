@@ -2,8 +2,8 @@ import pytest
 
 from app.core.ros_types import canonical_message_type, ros1_message_type
 from app.models.ros import TopicInfo
-from app.services.ros_contract import RosService
-from app.services.ros2_service import Ros2Service
+from app.services.ros_contract import RosAdapter
+from app.services.ros2.adapter import Ros2Adapter
 
 
 @pytest.mark.parametrize(
@@ -39,7 +39,7 @@ def test_topic_model_never_exposes_ros1_type_format():
 
 
 def test_ros2_service_implements_application_contract(settings):
-    service = Ros2Service(settings)
+    service = Ros2Adapter(settings)
 
-    assert isinstance(service, RosService)
+    assert isinstance(service, RosAdapter)
     assert service.middleware == "ros2"

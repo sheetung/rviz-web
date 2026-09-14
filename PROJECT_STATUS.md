@@ -20,9 +20,9 @@
 DDS 容器网络仍需要在目标设备上集成验证。
 
 后端已开始按多 ROS 版本方向整理边界：FastAPI 入口依赖 `RosService` 应用契约，
-当前 rclpy 实现明确为 `Ros2Service`；消息类型在系统内部统一为
+当前 rclpy 实现明确为 `Ros2Adapter`；消息类型在系统内部统一为
 `package/msg/Type`，ROS1 两段式类型只在输入边界转换。ROS1 适配器尚未实现，
-下一步仍需把 WebSocket 会话编排和 ROS2 中间件操作从当前大服务中进一步拆开。
+Gateway 和公共应用层已从 ROS2 实现中分离；ROS2 专用代码集中于 services/ros2/。
 
 ## 已实现并在当前代码中保留的能力
 
@@ -46,7 +46,7 @@ DDS 容器网络仍需要在目标设备上集成验证。
 
 - 后端使用 rclpy 直接访问 ROS2 图。
 - FastAPI/API 层通过 `RosService` 契约访问当前 ROS 实现，不再直接依赖具体 ROS2 类。
-- 当前具体实现命名为 `Ros2Service`，并显式声明 `middleware="ros2"`。
+- 当前具体实现命名为 `Ros2Adapter`，并显式声明 `middleware="ros2"`。
 - ROS 消息类型在入口、图发现和发布/订阅路径统一规范为 `package/msg/Type`；
   ROS1 的 `package/Type` 输入可转换，但不会作为内部状态继续传播。
 - 消息转换器只依赖系统设置，不再反向持有整个 ROS2 服务。
@@ -133,14 +133,22 @@ DDS 容器网络仍需要在目标设备上集成验证。
 - Dockerfile 已修复前端 Node 版本、开发依赖构建、后端锁文件安装、同源 WebSocket
   和健康检查；DDS 发现和宿主机网络模式仍需按部署环境验证。
 
-### ROS 服务拆分仍在进行
+### ROS 适配边界
 
-- `RosService` 已形成应用层公共契约，但 WebSocket handler 目前仍调用
-  `Ros2Service` 的私有订阅和 publisher 所有权方法。
-- `ros2_service.py` 仍同时负责 ROS2 生命周期、图发现、QoS、消息队列和 WebSocket
-  会话编排，后续需要按 Gateway 与 ROS2 Adapter 拆分。
-- 前端仍有 ROS2 名称和规范消息类型常量；接入 ROS1 前应将连接来源和中间件名称
-  作为服务元数据提供，渲染组件只消费规范消息。
+- RosGateway 负责 WebSocket 生命周期和协议；RosApplication 负责客户端所有权、
+  权限、消息转发和宿主机状态。
+- Ros2Adapter 及 ROS2 专用辅助模块位于 `services/ros2/`，通过公共契约与回调
+  交换规范数据，不依赖连接管理器或 WebSocket。
+- 公共模块可脱离 ROS 安装导入。假适配器测试和隔离 Domain 的真实 String
+  收发、取消订阅测试已通过；另已使用 IndoorOffice1 ROS2 bag 完成三路点云
+  A/B/B/A 对比，602 个共同帧哈希一致，未证实性能提升。
+  Ouster 在直接 rclpy 订阅时也仅约 4.35 Hz，仍需定位大消息接收瓶颈；
+  多设备 DDS、TF 和浏览器渲染仍需实机场景验证。
+  详见 [ROS2 bag 实测报告](docs/ros2-bag-benchmark.md)。
+- 当前拆分框架已完成模拟 RTSP 单路/四路、点云混合负载及源断流/手动重开测试；
+  视频约 12 fps、限额与 FFmpeg 清理正常，混合场景点云吞吐较低，断订阅竞态仍存在。
+  详见 [RTSP 混合测试报告](docs/ros2-rtsp-benchmark.md)；不代表真实摄像头或浏览器验证。
+- ROS1 暂未实现；消息名称统一不等于跨版本消息结构转换已经实现。
 
 ### ROS2 发行版与工作空间差异
 
@@ -190,17 +198,23 @@ uv run python -m compileall -q app
 
 ### P1：测试与稳定性
 
+- 压力测试发现默认 Uvicorn WebSocket 传输对停读客户端持续积压，前后两版
+  最高档均触发 1 GiB 安全停止；优先补齐传输层背压与真实慢连接回归。
+  仅在测试中切换 `--ws websockets` 已显著抑制内存增长，生产入口尚未修改。
+- 当前 ROS2 Adapter 在转换等待期间发生最后一个客户端断订阅时，恢复后可能
+  索引已删除的消息类型并触发 KeyError；应修复此重构回归并增加交错测试。
 - 为 HTTP CORS、WebSocket Origin 策略和反向代理部署补充端到端测试。
 - 为 TF 外推错误、缺失 TF 状态和 Display 生命周期补充前端测试。
 - 增加 WebSocket 发布/订阅和重连的集成测试。
 - 在真实 ROS2 图中覆盖自定义消息、QoS 不匹配和高频点云。
 
-### P1：后端 ROS 边界
+### P1：ROS2 集成验证
 
-- 将 WebSocket 会话、连接所有权和操作响应提取为独立 Gateway。
-- 将 rclpy 节点、QoS、图发现、订阅发布和 spin 生命周期收敛到 ROS2 Adapter。
-- 禁止协议层调用 ROS2 Adapter 私有方法，以契约测试固定公共行为。
-- 完成上述边界后，再以独立进程或容器实现 ROS1 Adapter。
+- 已完成 Gateway、公共会话层、ROS2 Adapter 分离，保留契约回归测试。
+- 已完成真实三雷达 bag 的输出一致性和后端性能对比；优先定位 Ouster 接收降帧，
+  并将正常 SIGINT 引发的 ROS 关闭异常与运行故障日志区分。
+- 扩展真实 ROS2 测试到 TF 保留消息、自定义类型、多客户端和高频点云。
+- 依据实际设备需求再实现 ROS1，保持公共协议和渲染组件独立于中间件。
 
 ### P2：TF 与性能
 
@@ -225,5 +239,5 @@ uv run python -m compileall -q app
 - 核心 3D 显示：可用，TF 已支持有限历史与插值，外推语义仍有限；截图可用，录像采用浏览器原生 WebM。
 - `.rvizweb` 配置管理：已实现，存储与前端变更状态已有单元测试，组件和端到端覆盖仍不足。
 - Docker 部署：构建链路已重写，DDS 网络尚未做目标设备集成验证。
-- 自动化测试：当前前端 18 个测试文件、后端 87 项通过，组件、端到端与 ROS2
+- 自动化测试：当前前端 18 个测试文件、后端 93 项通过，组件、端到端与 ROS2
   集成覆盖仍不足。

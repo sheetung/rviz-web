@@ -6,7 +6,10 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.models.ros import TopicInfo
-from app.services.ros2_service import Ros2Service
+from app.services.ros2.adapter import Ros2Adapter
+from app.services.ros_application import RosApplication
+from app.services.ros_gateway import RosGateway
+from app.services.connection_manager import ConnectionManager
 
 
 class FakeGraphNode:
@@ -47,7 +50,7 @@ class FakeSamplingNode(FakeGraphNode):
 async def test_topics_include_graph_and_observed_message_metadata(
     settings, monkeypatch
 ):
-    service = Ros2Service(settings)
+    service = Ros2Adapter(settings)
     service.node = FakeGraphNode()
     monkeypatch.setattr(
         service,
@@ -61,7 +64,7 @@ async def test_topics_include_graph_and_observed_message_metadata(
             ]
         ),
     )
-    monkeypatch.setattr("app.services.ros2_service.time.time", lambda: 1000.0)
+    monkeypatch.setattr("app.services.ros2.adapter.time.time", lambda: 1000.0)
     service.subscribers["/points"] = object()
     service._topic_observation_started_at["/points"] = 990.0
     service._topic_message_times["/points"] = deque([999.8, 999.9, 1000.0])
@@ -81,9 +84,9 @@ async def test_topics_include_graph_and_observed_message_metadata(
 async def test_frequencies_distinguish_measured_zero_from_unobserved(
     settings, monkeypatch
 ):
-    service = Ros2Service(settings)
+    service = Ros2Adapter(settings)
     service.node = FakeGraphNode()
-    monkeypatch.setattr("app.services.ros2_service.time.time", lambda: 1000.0)
+    monkeypatch.setattr("app.services.ros2.adapter.time.time", lambda: 1000.0)
     service.subscribers["/idle"] = object()
     service._topic_observation_started_at["/idle"] = 990.0
     service.subscribers["/points"] = object()
@@ -101,13 +104,13 @@ async def test_frequencies_distinguish_measured_zero_from_unobserved(
 async def test_frequency_endpoint_actively_samples_published_topics(
     settings, monkeypatch
 ):
-    service = Ros2Service(settings)
+    service = Ros2Adapter(settings)
     service.node = FakeSamplingNode()
     monotonic_times = iter([100.0, 100.1, 100.2])
 
     monkeypatch.setattr(service, "_get_message_class", lambda _message_type: object)
     monkeypatch.setattr(service, "_frequency_clock", lambda: next(monotonic_times))
-    monkeypatch.setattr("app.services.ros2_service.time.time", lambda: 1000.0)
+    monkeypatch.setattr("app.services.ros2.adapter.time.time", lambda: 1000.0)
 
     async def emit_samples(_duration):
         callback = service.node.callbacks["/points"]
@@ -115,7 +118,7 @@ async def test_frequency_endpoint_actively_samples_published_topics(
         callback(b"second")
         callback(b"third")
 
-    monkeypatch.setattr("app.services.ros2_service.asyncio.sleep", emit_samples)
+    monkeypatch.setattr("app.services.ros2.adapter.asyncio.sleep", emit_samples)
 
     frequencies = await service.get_topic_frequencies(sample_duration=1.0)
 
@@ -129,18 +132,20 @@ async def test_frequency_endpoint_actively_samples_published_topics(
 
 @pytest.mark.asyncio
 async def test_websocket_topics_encode_last_message_time(settings, monkeypatch):
-    service = Ros2Service(settings)
+    service = Ros2Adapter(settings)
+    application = RosApplication(settings, service, ConnectionManager())
+    gateway = RosGateway(settings, application, application.connection_manager)
     topic = TopicInfo(
         name="/points",
         message_type="sensor_msgs/msg/PointCloud2",
         last_message_time=datetime(2026, 7, 13, 6, 15, tzinfo=timezone.utc),
     )
     monkeypatch.setattr(service, "get_topics", AsyncMock(return_value=[topic]))
-    service.connection_manager.send_to_client = AsyncMock()
+    application.connection_manager.send_to_client = AsyncMock()
 
-    await service._handle_get_topics("client-1", "request-1")
+    await gateway.handle_message("client-1", {"op": "get_topics", "id": "request-1"})
 
-    response = service.connection_manager.send_to_client.await_args.args[1]
+    response = application.connection_manager.send_to_client.await_args.args[1]
     encoded_time = response["topics"][0]["last_message_time"].replace("Z", "+00:00")
     assert datetime.fromisoformat(encoded_time) == datetime(
         2026, 7, 13, 6, 15, tzinfo=timezone.utc

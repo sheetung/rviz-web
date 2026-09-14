@@ -6,13 +6,18 @@ import pytest
 from rclpy.qos import QoSHistoryPolicy
 
 from app.models.ros import ConnectionInfo
-from app.services.ros2_service import Ros2Service
+from app.services.ros2.adapter import Ros2Adapter
+from app.services.ros_application import RosApplication
+from app.services.ros_gateway import RosGateway
+from app.services.connection_manager import ConnectionManager
 
 
 def test_client_ids_are_unique_under_connection_bursts(settings):
-    service = Ros2Service(settings)
+    service = Ros2Adapter(settings)
+    application = RosApplication(settings, service, ConnectionManager())
+    gateway = RosGateway(settings, application, application.connection_manager)
 
-    client_ids = {service._new_client_id() for _ in range(10_000)}
+    client_ids = {gateway.new_client_id() for _ in range(10_000)}
 
     assert len(client_ids) == 10_000
     assert all(client_id.startswith("client_") for client_id in client_ids)
@@ -24,32 +29,35 @@ async def test_message_cache_does_not_retain_serialized_payloads(settings, monke
         return function(*args)
 
     monkeypatch.setattr(asyncio, "to_thread", run_inline)
-    service = Ros2Service(settings)
-    service.connection_manager.connection_info["client-1"] = ConnectionInfo(
+    service = Ros2Adapter(settings)
+    application = RosApplication(settings, service, ConnectionManager())
+    application.connection_manager.connection_info["client-1"] = ConnectionInfo(
         client_id="client-1",
         connected_at=datetime.now(),
         subscribed_topics=["/large_points"],
         message_count=0,
     )
+    service.subscribers["/large_points"] = object()
     large_payload = {"data": "x" * 1_000_000, "data_encoding": "base64"}
     service._subscription_types["/large_points"] = "sensor_msgs/msg/PointCloud2"
     service._converter.to_dict = Mock(return_value=large_payload)
-    service.connection_manager.broadcast = AsyncMock(return_value=True)
+    application.connection_manager.broadcast = AsyncMock(return_value=True)
 
     await service._on_message_received("/large_points", object())
 
-    service.connection_manager.broadcast.assert_awaited_once()
+    application.connection_manager.broadcast.assert_awaited_once()
     assert len(service.message_cache) == 1
     assert service.message_cache[0]["topic"] == "/large_points"
     assert "message" not in service.message_cache[0]
     assert (
-        service.connection_manager.broadcast.await_args.kwargs["coalesce_topic"] is True
+        application.connection_manager.broadcast.await_args.kwargs["coalesce_topic"]
+        is True
     )
 
 
 def test_pointcloud_forward_rate_is_limited_before_conversion(settings):
     limited_settings = settings.model_copy(update={"ros_pointcloud_max_hz": 10.0})
-    service = Ros2Service(limited_settings)
+    service = Ros2Adapter(limited_settings)
     service._subscription_types["/points"] = "sensor_msgs/msg/PointCloud2"
 
     assert service._claim_topic_forward_slot("/points", now=1.0)
@@ -59,7 +67,7 @@ def test_pointcloud_forward_rate_is_limited_before_conversion(settings):
 
 
 def test_high_bandwidth_sensor_qos_keeps_only_latest_sample(settings):
-    service = Ros2Service(settings)
+    service = Ros2Adapter(settings)
     keep_all_publisher = Mock(history=QoSHistoryPolicy.KEEP_ALL)
 
     history, depth = service._subscriber_history_settings(

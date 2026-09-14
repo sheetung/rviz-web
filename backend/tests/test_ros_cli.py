@@ -1,7 +1,7 @@
 import subprocess
 from unittest.mock import Mock
 
-from app.services.ros2_service import Ros2Service
+from app.services.ros2.adapter import Ros2Adapter
 
 
 def test_topic_discovery_does_not_use_ros2_daemon(settings, monkeypatch):
@@ -13,8 +13,8 @@ def test_topic_discovery_does_not_use_ros2_daemon(settings, monkeypatch):
             stderr="",
         )
     )
-    monkeypatch.setattr("app.services.ros2_service.subprocess.run", run)
-    service = Ros2Service(settings)
+    monkeypatch.setattr("app.services.ros2.adapter.subprocess.run", run)
+    service = Ros2Adapter(settings)
 
     topics = service._get_topics_from_cli_sync()
 

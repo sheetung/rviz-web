@@ -6,6 +6,9 @@
 
 ### Changed
 
+- 完成 ROS2 适配边界分离：新增 RosGateway、RosApplication，ROS2 代码集中到 services/ros2/，公共层不再直接加载 ROS 依赖。
+- 会话所有权、系统状态和 WebSocket 转发归公共层；关闭时先释放 ROS 资源再移除连接状态，补充假适配器边界回归测试。
+
 - 后端新增 `RosService` 应用契约，当前 rclpy 实现明确为 `Ros2Service`，FastAPI 路由不再直接依赖具体 ROS2 类。
 - ROS 消息类型统一规范为 `package/msg/Type`，边界可接收并转换 ROS1 `package/Type`；消息转换器解除对完整 ROS 服务的反向依赖。
 - 新增简洁的 Docker Compose 部署，使用 Linux host 网络接入 ROS2 DDS，并加入配置持久化、健康检查、自动重启和日志轮转。

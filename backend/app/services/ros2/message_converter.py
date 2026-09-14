@@ -6,7 +6,7 @@ ROS2 消息与字典的双向转换
 from __future__ import annotations
 
 import logging
-from ..core.config import Settings
+from ...core.config import Settings
 
 logger = logging.getLogger(__name__)
 

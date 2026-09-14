@@ -1,9 +1,7 @@
 """当前基于 rclpy 的 ROS2 服务实现。"""
 
 import asyncio
-import json
 import logging
-import os
 import subprocess
 import time
 import uuid
@@ -12,7 +10,6 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import rclpy
-from fastapi import WebSocket, WebSocketDisconnect
 from rclpy.node import Node
 from rclpy.qos import (
     QoSDurabilityPolicy,
@@ -21,14 +18,13 @@ from rclpy.qos import (
     QoSReliabilityPolicy,
 )
 
-from ..core.config import Settings
-from ..core.ros_types import canonical_message_type
-from ..models.ros import NodeInfo, SystemStatus, TopicInfo
-from .connection_manager import ConnectionManager
+from ...core.config import Settings
+from ...core.ros_types import canonical_message_type
+from ...models.ros import NodeInfo, TopicInfo
+from typing import Awaitable, Callable
 from .frequency_tracker import FrequencyTracker
 from .message_converter import MessageConverter
 from .message_types import get_message_class
-from .ws_handlers import WebSocketRequestHandler
 
 logger = logging.getLogger(__name__)
 
@@ -45,25 +41,15 @@ _LATEST_ONLY_MESSAGE_TYPES = _POINTCLOUD_MESSAGE_TYPES | {
     "sensor_msgs/msg/CompressedImage",
 }
 
-try:
-    import psutil
-except ImportError:
-    psutil = None
 
-
-class Ros2Service:
+class Ros2Adapter:
     """基于 rclpy 的 ROS2 服务实现。"""
 
     middleware = "ros2"
 
     def __init__(self, settings: Settings):
         self.settings = settings
-        self.connection_manager = ConnectionManager(
-            settings.max_connections,
-            settings.websocket_outbound_queue_size,
-            settings.websocket_send_timeout,
-            settings.websocket_max_outbound_message_bytes,
-        )
+        self._message_sink = None
         self._converter = MessageConverter(settings)
         self._freq = FrequencyTracker(
             message_class_resolver=lambda msg_type: self._get_message_class(msg_type),
@@ -71,14 +57,12 @@ class Ros2Service:
             wall_clock=lambda: time.time(),
             sleep=lambda duration: asyncio.sleep(duration),
         )
-        self._ws_handler = WebSocketRequestHandler(self)
         self.node: Optional[Node] = None
         self.subscribers = {}
         self._subscription_types: Dict[str, str] = {}
         self._topic_forward_buckets: Dict[str, tuple[float, float]] = {}
         self.publishers = {}
         self.message_cache = deque(maxlen=settings.message_buffer_size)
-        self.start_time = time.time()
         self.topic_info_cache = {}
         self.node_info_cache = {}
         self._topic_cache = {}
@@ -221,199 +205,19 @@ class Ros2Service:
 
             if self.node:
                 self.node.destroy_node()
-            await self.connection_manager.close_all()
+                self.node = None
+            self.subscribers.clear()
+            self.publishers.clear()
+            self._subscription_types.clear()
+            self._pending_latest_messages.clear()
+            self._queued_topics.clear()
+            self._topic_cache.clear()
+            self._node_cache = None
             if rclpy.ok():
                 rclpy.shutdown()
             logger.info("ROS2 service stopped")
         except Exception as e:
             logger.error(f"Error stopping ROS2 service: {e}")
-
-    async def handle_websocket(self, websocket: WebSocket):
-        """处理 WebSocket 连接"""
-        client_id = self._new_client_id()
-        request_times = deque()
-
-        if not await self.connection_manager.connect(websocket, client_id):
-            return
-
-        try:
-            while True:
-                data = await websocket.receive_text()
-                request_now = time.monotonic()
-                while request_times and request_times[0] <= request_now - 1:
-                    request_times.popleft()
-                if (
-                    len(request_times)
-                    >= self.settings.websocket_max_requests_per_second
-                ):
-                    await websocket.close(code=1008, reason="Rate limit exceeded")
-                    return
-                request_times.append(request_now)
-                if (
-                    len(data.encode("utf-8"))
-                    > self.settings.websocket_max_message_bytes
-                ):
-                    await websocket.close(code=1009, reason="Message too large")
-                    return
-                try:
-                    message = json.loads(data)
-                except json.JSONDecodeError:
-                    await self.connection_manager.send_to_client(
-                        client_id,
-                        {"op": "error", "error": "WebSocket 消息不是有效 JSON"},
-                    )
-                    continue
-                if not isinstance(message, dict):
-                    await self.connection_manager.send_to_client(
-                        client_id,
-                        {"op": "error", "error": "WebSocket 消息必须是对象"},
-                    )
-                    continue
-                await self._handle_message(client_id, message)
-
-        except WebSocketDisconnect:
-            logger.info(f"Client {client_id} disconnected")
-        except Exception as e:
-            logger.error(f"WebSocket error for {client_id}: {e}")
-        finally:
-            await self._cleanup_client_subscriptions(client_id)
-            await self._cleanup_client_publishers(client_id)
-            self.connection_manager.disconnect(client_id)
-
-    @staticmethod
-    def _new_client_id() -> str:
-        return f"client_{uuid.uuid4().hex}"
-
-    async def _handle_message(self, client_id: str, message: dict):
-        """处理收到的消息（委托到 WebSocketRequestHandler）"""
-        await self._ws_handler.handle_operation(client_id, message)
-
-    async def _handle_unsubscribe(self, client_id: str, message: dict):
-        await self._ws_handler._handle_unsubscribe(client_id, message)
-
-    async def _handle_advertise(self, message: dict, client_id: str = ""):
-        await self._ws_handler._handle_advertise(client_id, message)
-
-    async def _handle_unadvertise(self, message: dict, client_id: str = ""):
-        await self._ws_handler._handle_unadvertise(client_id, message)
-
-    async def _handle_publish(self, message: dict, client_id: str = ""):
-        await self._ws_handler._handle_publish(client_id, message)
-
-    async def _handle_get_topics(self, client_id: str, request_id: str = None):
-        await self._ws_handler._handle_get_topics(client_id, request_id)
-
-    async def _handle_get_nodes(self, client_id: str, request_id: str = None):
-        await self._ws_handler._handle_get_nodes(client_id, request_id)
-
-    async def _handle_get_topic_types(self, client_id: str, request_id: str = None):
-        await self._ws_handler._handle_get_topic_types(client_id, request_id)
-
-    async def _handle_get_topic_frequencies(
-        self, client_id: str, request_id: str = None
-    ):
-        await self._ws_handler._handle_get_topic_frequencies(client_id, request_id)
-
-    async def _handle_get_system_status(self, client_id: str, request_id: str = None):
-        await self._ws_handler._handle_get_system_status(client_id, request_id)
-
-    async def _handle_get_services(self, client_id: str, request_id: str = None):
-        await self._ws_handler._handle_get_services(client_id, request_id)
-
-    async def _handle_get_service_types(self, client_id: str, request_id: str = None):
-        await self._ws_handler._handle_get_service_types(client_id, request_id)
-
-    async def _handle_get_params(self, client_id: str, request_id: str = None):
-        await self._ws_handler._handle_get_params(client_id, request_id)
-
-    async def _handle_subscribe(self, client_id: str, message: dict):
-        """处理订阅请求"""
-        topic = message.get("topic")
-        msg_type = message.get("type")
-
-        logger.info(
-            f"🔔 Received subscription request from {client_id}: topic={topic}, type={msg_type}"
-        )
-
-        if not topic:
-            logger.error(
-                f"❌ Invalid subscription request from {client_id}: missing topic"
-            )
-            return False
-
-        info = self.connection_manager.connection_info.get(client_id)
-        if not info:
-            logger.error(f"❌ Client {client_id} connection info not found")
-            logger.error(
-                f"🔍 Available connections: {list(self.connection_manager.connection_info.keys())}"
-            )
-            return False
-
-        if (
-            topic not in info.subscribed_topics
-            and len(info.subscribed_topics)
-            >= self.settings.ros_max_subscriptions_per_client
-        ):
-            raise RuntimeError("该客户端的 ROS 订阅数量已达上限")
-
-        # ROS subscriber 与客户端所有权必须在同一临界区内更新，避免刚创建
-        # 的订阅被并发断线清理误判为“无人使用”。
-        async with self._subscription_lock:
-            subscribed = await self._subscribe_topic_locked(topic, msg_type)
-            if not subscribed:
-                logger.error(f"❌ Failed to subscribe client {client_id} to {topic}")
-                return False
-
-            if topic not in info.subscribed_topics:
-                info.subscribed_topics.append(topic)
-                logger.info(f"✅ Added {topic} to client {client_id} subscription list")
-                logger.info(
-                    f"🔍 Updated subscription list for {client_id}: {info.subscribed_topics}"
-                )
-            else:
-                logger.info(f"📝 Client {client_id} already subscribed to {topic}")
-
-        logger.info(
-            f"📊 Current subscriptions for {client_id}: {info.subscribed_topics if info else 'none'}"
-        )
-        logger.info(f"📊 Total active ROS2 subscribers: {len(self.subscribers)}")
-
-        # 🔍 验证订阅是否正确设置
-        logger.info("🔍 Verification - All connection subscriptions:")
-        for cid, cinfo in self.connection_manager.connection_info.items():
-            logger.info(f"   - {cid}: {cinfo.subscribed_topics}")
-        return True
-
-    def _topic_client_subscription_count(self, topic: str) -> int:
-        return sum(
-            1
-            for info in self.connection_manager.connection_info.values()
-            if topic in info.subscribed_topics
-        )
-
-    async def _stop_ros_subscription_if_unused(self, topic: str):
-        async with self._subscription_lock:
-            if self._topic_client_subscription_count(topic) == 0:
-                self._unsubscribe_topic_locked(topic)
-
-    async def _cleanup_client_subscriptions(self, client_id: str):
-        info = self.connection_manager.connection_info.get(client_id)
-        if not info:
-            return
-
-        topics = list(info.subscribed_topics)
-        info.subscribed_topics.clear()
-        for topic in topics:
-            await self._stop_ros_subscription_if_unused(topic)
-
-    async def _cleanup_client_publishers(self, client_id: str):
-        info = self.connection_manager.connection_info.get(client_id)
-        if not info:
-            return
-        topics = list(info.advertised_topics)
-        info.advertised_topics.clear()
-        for topic in topics:
-            await self._release_publisher(topic, client_id)
 
     async def _create_subscriber(self, topic: str, msg_type: str):
         """创建 ROS2 订阅者"""
@@ -815,78 +619,29 @@ class Ros2Service:
         self._topic_forward_buckets[topic] = (current_time, tokens - 1.0)
         return True
 
+    def set_message_sink(
+        self, sink: Callable[[str, dict, str], Awaitable[None]]
+    ) -> None:
+        """注册规范消息回调；适配器不感知浏览器和传输协议。"""
+        self._message_sink = sink
+
     async def _on_message_received(self, topic: str, msg):
-        """处理接收到的 ROS 消息"""
-        try:
-            logger.debug(
-                f"📨 Processing message on topic {topic}, type: {type(msg).__name__}"
-            )
+        if self._message_sink is None or topic not in self.subscribers:
+            return
+        if not self._claim_topic_forward_slot(topic):
+            return
+        payload = await asyncio.to_thread(self._converter.to_dict, msg)
+        await self._message_sink(topic, payload, self._subscription_types[topic])
+        self.message_cache.append({"topic": topic, "timestamp": time.time()})
 
-            active_subscribers = self._topic_client_subscription_count(topic)
-            if active_subscribers == 0:
-                logger.debug(f"📭 Dropping {topic}: no active frontend subscribers")
-                return
-
-            if not self._claim_topic_forward_slot(topic):
-                return
-
-            # 转换消息为字典格式
-            msg_dict = await asyncio.to_thread(self._converter.to_dict, msg)
-
-            # 记录消息大小信息
-            if "data" in msg_dict:
-                if isinstance(msg_dict["data"], list):
-                    logger.debug(
-                        f"📝 Converted {topic} to dict with {len(msg_dict['data'])} data points"
-                    )
-                else:
-                    logger.debug(
-                        f"📝 Converted {topic} to dict, keys: {list(msg_dict.keys())}"
-                    )
-            else:
-                logger.debug(
-                    f"📝 Converted {topic} to dict, keys: {list(msg_dict.keys())}"
-                )
-
-            # 构造 rosbridge 消息
-            rosbridge_msg = {"op": "publish", "topic": topic, "msg": msg_dict}
-
-            # 🔍 调试：详细打印连接信息
-            logger.debug(f"🔍 Debug subscription check for {topic}:")
-            logger.debug(
-                f"   - Total active connections: {len(self.connection_manager.connection_info)}"
-            )
-            for client_id, info in self.connection_manager.connection_info.items():
-                logger.debug(
-                    f"   - Client {client_id}: subscribed to {info.subscribed_topics}"
-                )
-            logger.debug(f"   - Active subscribers for {topic}: {active_subscribers}")
-
-            if active_subscribers > 0:
-                logger.debug(
-                    f"🔔 Broadcasting message for {topic} to {active_subscribers} subscribers"
-                )
-
-                # 广播给所有订阅该主题的客户端
-                message_type = self._subscription_types.get(topic, "")
-                broadcast_result = await self.connection_manager.broadcast(
-                    rosbridge_msg,
-                    coalesce_topic=message_type in _LATEST_ONLY_MESSAGE_TYPES,
-                )
-
-                if broadcast_result:
-                    logger.debug(
-                        f"📤 Successfully broadcast {topic} to {active_subscribers} clients"
-                    )
-                else:
-                    logger.warning(f"⚠️ Failed to broadcast {topic} to clients")
-            # 缓存消息
-            self.message_cache.append({"topic": topic, "timestamp": time.time()})
-
-        except Exception as e:
-            logger.error(
-                f"❌ Error processing message from {topic}: {e}", exc_info=True
-            )
+    def publish_prepared(self, topic: str, message: Dict[str, Any]) -> str:
+        """向已创建的 ROS publisher 写入规范消息。"""
+        record = self.publishers[topic]
+        converted = self._converter.from_dict(record["msg_class"], message)
+        if converted is None:
+            raise ValueError("无法转换 ROS 消息")
+        record["publisher"].publish(converted)
+        return record["msg_type"]
 
     # API 方法实现
     def _get_topics_from_cli_sync(self) -> List[TopicInfo]:
@@ -1090,9 +845,7 @@ class Ros2Service:
                         TopicInfo(
                             name=name,
                             message_type=(
-                                canonical_message_type(types[0])
-                                if types
-                                else "unknown"
+                                canonical_message_type(types[0]) if types else "unknown"
                             ),
                             publishers=[],
                             subscribers=[],
@@ -1245,7 +998,7 @@ class Ros2Service:
             # REST 请求可能并发发布到同一 topic。每个请求必须持有独立 owner，
             # 否则先结束的请求会移除共享 owner，并销毁仍被其他请求使用的 Publisher。
             rest_owner = f"rest_{uuid.uuid4().hex}"
-            await self._ensure_publisher(topic_name, msg_type, rest_owner)
+            await self.acquire_publisher(topic_name, msg_type, rest_owner)
             try:
                 publisher_record = self.publishers.get(topic_name)
                 if not publisher_record:
@@ -1261,7 +1014,7 @@ class Ros2Service:
                 publisher_record["publisher"].publish(ros_msg)
                 return True
             finally:
-                await self._release_publisher(topic_name, rest_owner)
+                await self.release_publisher(topic_name, rest_owner)
         except Exception as e:
             logger.error(f"Failed to publish to {topic_name}: {e}")
             return False
@@ -1457,73 +1210,7 @@ class Ros2Service:
                 return node
         return None
 
-    async def get_system_status(self) -> SystemStatus:
-        """获取系统状态"""
-        topics = await self.get_topics(include_details=False)
-        nodes = await self.get_nodes()
-        cpu_usage = 0.0
-        memory_usage = 0.0
-        cpu_temperature = None
-
-        if psutil:
-            cpu_usage = psutil.cpu_percent(interval=None)
-            memory_usage = psutil.virtual_memory().percent
-            cpu_temperature = self._get_cpu_temperature()
-
-        return SystemStatus(
-            ros_domain_id=self.settings.ros_domain_id,
-            active_nodes=len(nodes),
-            active_topics=len(topics),
-            active_connections=len(self.connection_manager.active_connections),
-            system_time=datetime.now(),
-            uptime=time.time() - self.start_time,
-            memory_usage=memory_usage,
-            cpu_usage=cpu_usage,
-            cpu_temperature=cpu_temperature,
-        )
-
-    def _get_cpu_temperature(self) -> Optional[float]:
-        """读取 CPU 温度，优先使用 psutil，失败时尝试 Linux thermal zone。"""
-        if psutil and hasattr(psutil, "sensors_temperatures"):
-            try:
-                temperatures = psutil.sensors_temperatures() or {}
-                preferred_keys = ("coretemp", "k10temp", "cpu_thermal", "soc_thermal")
-                for key in preferred_keys:
-                    entries = temperatures.get(key)
-                    if entries:
-                        values = [
-                            entry.current
-                            for entry in entries
-                            if entry.current is not None
-                        ]
-                        if values:
-                            return round(max(values), 1)
-                for entries in temperatures.values():
-                    values = [
-                        entry.current for entry in entries if entry.current is not None
-                    ]
-                    if values:
-                        return round(max(values), 1)
-            except Exception as e:
-                logger.debug(f"Could not read CPU temperature from psutil: {e}")
-
-        thermal_root = "/sys/class/thermal"
-        try:
-            for name in os.listdir(thermal_root):
-                if not name.startswith("thermal_zone"):
-                    continue
-                temp_path = os.path.join(thermal_root, name, "temp")
-                with open(temp_path, "r", encoding="utf-8") as temp_file:
-                    raw_value = temp_file.read().strip()
-                if raw_value:
-                    value = float(raw_value)
-                    return round(value / 1000.0 if value > 1000 else value, 1)
-        except Exception as e:
-            logger.debug(f"Could not read CPU temperature from thermal zone: {e}")
-
-        return None
-
-    async def _ensure_publisher(
+    async def acquire_publisher(
         self,
         topic: str,
         msg_type: str,
@@ -1590,7 +1277,7 @@ class Ros2Service:
         }
         logger.info(f"🆕 Created publisher for {topic} ({msg_type})")
 
-    async def _release_publisher(self, topic: str, owner_id: str) -> None:
+    async def release_publisher(self, topic: str, owner_id: str) -> None:
         async with self._publisher_lock:
             self._release_publisher_locked(topic, owner_id)
 
