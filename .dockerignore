@@ -1,0 +1,13 @@
+.git
+.agents
+.codex
+.env
+.env.*
+logs
+backend/.venv
+backend/**/__pycache__
+backend/.pytest_cache
+frontend/node_modules
+frontend/dist
+rvizweb_configs/*
+!rvizweb_configs/default.rvizweb

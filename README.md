@@ -196,6 +196,38 @@ cp .env.example .env
 ./start.sh
 ```
 
+### Docker Compose 部署
+
+Linux 设备可使用单容器 Compose 部署。容器通过宿主机网络加入 ROS2 DDS 网络，
+因此不需要映射端口：
+
+```bash
+docker compose up -d --build
+docker compose ps
+docker compose logs -f
+```
+
+浏览器访问 `http://localhost:3000/`。Compose 会读取项目根目录 `.env` 中的
+`ROS_DOMAIN_ID`、订阅/发布话题边界、应用标题和启动配置名，并持久化挂载
+`rvizweb_configs/`。Docker 日志使用本地驱动轮转，不受 `LOG_ENABLED` 控制。
+
+更新代码后重新构建并启动：
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+停止服务：
+
+```bash
+docker compose down
+```
+
+容器目前只包含 ROS Humble 自带消息包。若话题使用自定义消息包，需要在
+`Dockerfile` 中安装或构建对应 ROS2 工作空间。`network_mode: host` 面向 Linux；
+Docker Desktop 环境的 ROS2 DDS 发现需要单独配置和验证。
+
 正常模式会先执行前端生产构建，再用静态预览服务提供页面，不监视源码文件。开发前端并需要热更新时使用：
 
 ```bash

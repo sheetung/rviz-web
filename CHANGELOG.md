@@ -6,6 +6,8 @@
 
 ### Changed
 
+- 新增简洁的 Docker Compose 部署，使用 Linux host 网络接入 ROS2 DDS，并加入配置持久化、健康检查、自动重启和日志轮转。
+- Docker 构建支持应用标题和启动配置名，Nginx 访问及错误日志统一输出到容器日志，并缩小构建上下文。
 - 前端和后端改为独立版本，分别使用 `frontend-v*` 和 `backend-v*` Git 标签；移除根目录统一 `VERSION` 文件。
 - 新增 `LOG_ENABLED` 启动日志开关，默认关闭；启用后每次启动创建一个按时间命名的目录，分别写入 `start.log`、`backend.log` 和 `frontend.log`，不覆盖历史日志。
 - 本地部署统一使用 `APP_HOST` 和 `APP_PORT` 作为浏览器入口，API 与 WebSocket 默认通过同源代理访问；`ROS_WS_URL` 仅用于需要直连的分离部署。

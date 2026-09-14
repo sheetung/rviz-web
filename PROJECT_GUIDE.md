@@ -230,8 +230,21 @@ uv run python -m compileall -q app
 ## Docker 状态
 
 仓库提供 Node 22 前端构建、uv 锁文件安装、Nginx 同源代理和安全响应头的
-单容器 `Dockerfile`。`start.sh` 不负责容器构建，宿主机 ROS2/DDS 网络仍需按
-实际中间件配置验证。
+单容器镜像。Linux 部署可直接执行：
+
+```bash
+docker compose up -d --build
+docker compose logs -f
+```
+
+Compose 使用宿主机网络，使容器直接参与 ROS2 DDS 发现；应用入口固定为
+`http://localhost:3000/`。它从根目录 `.env` 选择性传入 Domain ID 和话题权限，
+并把 `rvizweb_configs/` 挂载到容器中。停止和删除容器使用
+`docker compose down`，配置文件不会随容器删除。
+
+容器内只有 ROS Humble 自带消息包。使用自定义 ROS 消息时，需要扩展
+`Dockerfile`，在镜像中安装或构建相应工作空间。宿主机与机器人仍需使用相同
+Domain ID，且 DDS、多播和防火墙配置应在目标设备上验证。
 
 ## 常见问题
 

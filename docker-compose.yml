@@ -1,0 +1,24 @@
+services:
+  rvizweb:
+    image: rvizweb:local
+    build:
+      context: .
+      args:
+        VITE_APP_TITLE: ${VITE_APP_TITLE:-RVizWeb}
+        VITE_RVIZWEB_CONFIG: ${RVIZWEB_CONFIG:-default.rvizweb}
+    container_name: rvizweb
+    network_mode: host
+    init: true
+    restart: unless-stopped
+    environment:
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+      ROS_SUBSCRIBE_TOPIC_ALLOWLIST: ${ROS_SUBSCRIBE_TOPIC_ALLOWLIST:-*}
+      ROS_PUBLISH_TOPIC_ALLOWLIST: ${ROS_PUBLISH_TOPIC_ALLOWLIST:-/goal_pose,/initialpose,/cmd_vel}
+    volumes:
+      - ./rvizweb_configs:/app/rvizweb_configs
+    logging:
+      driver: local
+      options:
+        max-size: 10m
+        max-file: "3"
+    stop_grace_period: 10s

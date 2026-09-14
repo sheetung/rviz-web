@@ -7,6 +7,8 @@ COPY frontend/package*.json ./frontend/
 RUN --mount=type=cache,target=/root/.npm \
     cd frontend && npm ci
 COPY frontend/ ./frontend/
+ARG VITE_APP_TITLE=RVizWeb
+ARG VITE_RVIZWEB_CONFIG=default.rvizweb
 RUN cd frontend && npm run build
 
 
@@ -35,6 +37,7 @@ COPY docker/start-container.sh /app/start-container.sh
 RUN chmod 0755 /app/start-container.sh
 
 ENV PYTHONPATH=/app/backend
+ENV PYTHONUNBUFFERED=1
 ENV ROS_DOMAIN_ID=0
 ENV BACKEND_HOST=127.0.0.1
 ENV RMW_IMPLEMENTATION=rmw_fastrtps_cpp
