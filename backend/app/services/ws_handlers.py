@@ -94,7 +94,6 @@ class WebSocketRequestHandler:
                 self._svc.settings,
                 "subscribe",
                 topic,
-                msg_type,
             )
             success = await self._svc._handle_subscribe(client_id, message)
             if not success:
@@ -147,7 +146,6 @@ class WebSocketRequestHandler:
                 self._svc.settings,
                 "publish",
                 topic,
-                msg_type,
             )
             await self._svc._ensure_publisher(topic, msg_type, client_id)
             info = self._svc.connection_manager.connection_info.get(client_id)
@@ -213,7 +211,6 @@ class WebSocketRequestHandler:
                 self._svc.settings,
                 "publish",
                 topic,
-                resolved_type,
             )
             # 即使 publisher 已存在，也要先原子地登记当前连接的所有权，
             # 防止另一个客户端同时 unadvertise 后销毁它。

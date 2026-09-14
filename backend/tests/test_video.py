@@ -78,7 +78,7 @@ def test_non_rtsp_source_is_rejected():
 
 @pytest.mark.asyncio
 async def test_private_rtsp_destination_is_blocked_by_default():
-    with pytest.raises(ValueError, match="私网地址默认禁用"):
+    with pytest.raises(ValueError, match="私网地址未被系统策略允许"):
         await video._validated_rtsp_destination(
             _settings(rtsp_allow_private_networks=False),
             "rtsp://192.168.1.66/live",

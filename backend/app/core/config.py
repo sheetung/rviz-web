@@ -4,7 +4,7 @@
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import ClassVar, Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -27,23 +27,6 @@ class Settings(BaseSettings):
 
     # ROS2 配置
     ros_domain_id: int = Field(default=0, description="ROS2 Domain ID")
-    max_connections: int = Field(default=100, description="最大连接数")
-    ros_max_subscriptions_per_client: int = Field(default=64, ge=1, le=1024)
-    ros_max_publishers: int = Field(default=32, ge=1, le=1024)
-    message_buffer_size: int = Field(default=10000, description="消息缓冲区大小")
-    ros_graph_cache_ttl: float = Field(default=2.0, ge=0.1, le=30.0)
-    ros_pointcloud_max_bytes: int = Field(
-        default=8_388_608,
-        ge=1_048_576,
-        le=268_435_456,
-    )
-    ros_pointcloud_max_hz: float = Field(default=10.0, ge=0.0, le=120.0)
-    ros_pointcloud_xyz_only: bool = Field(default=True)
-    ros_image_max_bytes: int = Field(
-        default=8_388_608,
-        ge=262_144,
-        le=67_108_864,
-    )
 
     # 安全配置
     cors_origins: str = Field(
@@ -58,60 +41,38 @@ class Settings(BaseSettings):
         default="/goal_pose,/initialpose,/cmd_vel",
         description="允许发布的 ROS topic glob，逗号分隔",
     )
-    ros_publish_type_allowlist: str = Field(
-        default=(
-            "geometry_msgs/msg/PoseStamped,"
-            "geometry_msgs/msg/PoseWithCovarianceStamped,"
-            "geometry_msgs/msg/Twist,"
-            "geometry_msgs/msg/Pose"
-        ),
-        description="允许发布的 ROS 消息类型，逗号分隔",
-    )
-    websocket_max_message_bytes: int = Field(
-        default=1_048_576,
-        ge=1024,
-        le=10_485_760,
-    )
-    websocket_send_timeout: float = Field(default=2.0, ge=0.1, le=30.0)
-    websocket_outbound_queue_size: int = Field(default=8, ge=1, le=1024)
-    websocket_max_outbound_message_bytes: int = Field(
-        default=16_777_216,
-        ge=1024,
-        le=268_435_456,
-    )
-    websocket_max_requests_per_second: int = Field(
-        default=30,
-        ge=1,
-        le=1000,
-    )
-    config_max_bytes: int = Field(default=1_048_576, ge=1024, le=10_485_760)
-    config_name_max_length: int = Field(default=96, ge=8, le=200)
-    config_backup_max_files: int = Field(default=50, ge=0, le=1000)
-    config_backup_max_bytes: int = Field(
-        default=52_428_800,
-        ge=0,
-        le=1_073_741_824,
-    )
 
-    # RTSP 视频转流配置
-    rtsp_transport: Literal["tcp", "udp"] = Field(default="tcp")
-    rtsp_frame_rate: int = Field(default=12, ge=1, le=30)
-    rtsp_width: int = Field(default=640, ge=160, le=1920)
-    rtsp_jpeg_quality: int = Field(default=5, ge=2, le=31)
-    rtsp_startup_timeout: float = Field(default=10.0, ge=2.0, le=30.0)
-    rtsp_session_ttl: int = Field(default=300, ge=30, le=3600)
-    rtsp_max_sessions: int = Field(default=4, ge=1, le=64)
-    rtsp_max_streams: int = Field(default=4, ge=1, le=64)
-    rtsp_max_streams_per_session: int = Field(default=1, ge=1, le=8)
-    rtsp_allow_private_networks: bool = Field(
-        default=False,
-        description="是否允许 RTSP 连接 RFC1918/ULA 私网地址",
-    )
-    rtsp_allowed_hosts: str = Field(
-        default="",
-        description="额外允许的 RTSP 主机名或 IP，逗号分隔",
-    )
-    ffmpeg_path: str = Field(default="ffmpeg", description="FFmpeg 可执行文件路径")
+    # 系统参数：只能在代码中调整，不接受 .env 覆盖。
+    max_connections: ClassVar[int] = 100
+    message_buffer_size: ClassVar[int] = 10_000
+    ros_max_subscriptions_per_client: ClassVar[int] = 64
+    ros_max_publishers: ClassVar[int] = 32
+    ros_graph_cache_ttl: ClassVar[float] = 2.0
+    ros_pointcloud_max_bytes: ClassVar[int] = 8_388_608
+    ros_pointcloud_max_hz: ClassVar[float] = 10.0
+    ros_pointcloud_xyz_only: ClassVar[bool] = True
+    ros_image_max_bytes: ClassVar[int] = 8_388_608
+    websocket_max_message_bytes: ClassVar[int] = 1_048_576
+    websocket_send_timeout: ClassVar[float] = 2.0
+    websocket_outbound_queue_size: ClassVar[int] = 8
+    websocket_max_outbound_message_bytes: ClassVar[int] = 16_777_216
+    websocket_max_requests_per_second: ClassVar[int] = 30
+    config_max_bytes: ClassVar[int] = 1_048_576
+    config_name_max_length: ClassVar[int] = 96
+    config_backup_max_files: ClassVar[int] = 50
+    config_backup_max_bytes: ClassVar[int] = 52_428_800
+    rtsp_transport: ClassVar[Literal["tcp", "udp"]] = "tcp"
+    rtsp_frame_rate: ClassVar[int] = 12
+    rtsp_width: ClassVar[int] = 640
+    rtsp_jpeg_quality: ClassVar[int] = 5
+    rtsp_startup_timeout: ClassVar[float] = 10.0
+    rtsp_session_ttl: ClassVar[int] = 300
+    rtsp_max_sessions: ClassVar[int] = 4
+    rtsp_max_streams: ClassVar[int] = 4
+    rtsp_max_streams_per_session: ClassVar[int] = 1
+    rtsp_allow_private_networks: ClassVar[bool] = False
+    rtsp_allowed_hosts: ClassVar[str] = ""
+    ffmpeg_path: ClassVar[str] = "ffmpeg"
 
 
 @lru_cache()

@@ -117,7 +117,6 @@ async def publish_message_by_body(
             get_settings(),
             "publish",
             payload.topic,
-            payload.message_type,
         )
         success = await service.publish_message(
             payload.topic,

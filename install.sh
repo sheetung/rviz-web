@@ -80,12 +80,8 @@ run_as_root() {
 }
 
 ensure_ffmpeg() {
-  local ffmpeg_command="${FFMPEG_PATH:-ffmpeg}"
+  local ffmpeg_command="ffmpeg"
   command -v "$ffmpeg_command" >/dev/null 2>&1 && return
-
-  if [[ "$ffmpeg_command" != "ffmpeg" ]]; then
-    fail "Configured FFMPEG_PATH is not executable or not in PATH: $ffmpeg_command"
-  fi
 
   log "ffmpeg not found; installing ffmpeg"
   if command -v apt-get >/dev/null 2>&1; then

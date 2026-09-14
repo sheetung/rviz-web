@@ -212,7 +212,7 @@ cp .env.example .env
 - FFmpeg（用于把浏览器不支持的 RTSP 转为 MJPEG）
 - curl（若未安装 `uv`，启动脚本会通过官方安装脚本自动安装）
 
-启动脚本会读取项目根目录 `.env`，加载 ROS2 环境，检查默认 `.rvizweb` 配置和端口，等待前后端健康检查，并把输出统一写入 `logs/`。浏览器始终通过 `APP_HOST:APP_PORT` 访问；后端端口从 `ROS_WS_URL` 自动解析，留空时默认为 `8000`。设置 `APP_HOST=0.0.0.0` 时，脚本会自动显示检测到的局域网地址。启动失败会立即退出；Ctrl+C 会停止整个前后端进程组。
+启动脚本会读取项目根目录 `.env`，加载 ROS2 环境，检查默认 `.rvizweb` 配置和端口，并等待前后端健康检查。`LOG_ENABLED` 默认为 `false`，此时输出只显示在终端，不写入 `logs/`；设为 `true` 时，每次启动会在 `logs/YYYYMMDD-HHMMSS/` 中分别创建 `start.log`、`backend.log` 和 `frontend.log`，且不覆盖历史目录。浏览器始终通过 `APP_HOST:APP_PORT` 访问；后端端口从 `ROS_WS_URL` 自动解析，留空时默认为 `8000`。设置 `APP_HOST=0.0.0.0` 时，脚本会自动显示检测到的局域网地址。启动失败会立即退出；Ctrl+C 会停止整个前后端进程组。
 
 浏览器标签页和页面左上角标题可在 `.env` 中修改：
 
@@ -242,38 +242,19 @@ rtsp://192.168.1.66:8554/1
 
 “连接”会先等待后端取得有效视频首帧。只有探测成功才显示视频窗口；失败或无画面时不会创建空白窗口，而是通过页面系统消息报告具体错误。
 
-后端转流参数可在 `.env` 中调整：
-
-```env
-RTSP_TRANSPORT=tcp
-RTSP_FRAME_RATE=12
-RTSP_WIDTH=640
-RTSP_JPEG_QUALITY=5
-RTSP_STARTUP_TIMEOUT=10
-RTSP_SESSION_TTL=300
-RTSP_MAX_SESSIONS=4
-RTSP_MAX_STREAMS=4
-RTSP_MAX_STREAMS_PER_SESSION=1
-RTSP_ALLOW_PRIVATE_NETWORKS=false
-RTSP_ALLOWED_HOSTS=192.168.1.66
-FFMPEG_PATH=ffmpeg
-```
-
-正常模式修改后重新执行 `./start.sh` 以重新构建前端；开发模式会随 Vite 重启或环境重新加载后生效。
+后端转流、并发和资源限制使用代码内置的系统参数，不从 `.env` 读取。
+项目维护者如需调整，应修改 `backend/app/core/config.py` 并重新部署。
 
 应用默认只监听 `127.0.0.1`。若要开放到局域网，只需设置 `APP_HOST=0.0.0.0`；
 启动脚本会自动推导代理目标、健康检查地址和允许的浏览器来源。应用本身不提供
 登录鉴权，应通过防火墙、可信局域网或 VPN 限制访问范围；不要把服务端口直接
 暴露到公网。
 
-ROS 发布默认只允许 `/goal_pose`、`/initialpose` 和 `/cmd_vel`，消息类型也受
-`ROS_PUBLISH_TYPE_ALLOWLIST` 限制。部署其他机器人话题时应在 `.env` 中显式扩展
-白名单。
+ROS 发布默认只允许 `/goal_pose`、`/initialpose` 和 `/cmd_vel`。
+部署其他机器人话题时应在 `.env` 中显式扩展话题白名单。
 
-RTSP 默认禁止私网、回环、链路本地和保留地址。局域网相机应优先通过
-`RTSP_ALLOWED_HOSTS` 精确放行；确需允许整个私网时再设置
-`RTSP_ALLOW_PRIVATE_NETWORKS=true`。域名在策略校验后会固定到已验证的 IP，
-避免 FFmpeg 二次解析时发生 DNS 重绑定。
+RTSP 默认禁止私网、回环、链路本地和保留地址。域名在策略校验后会固定到
+已验证的 IP，避免 FFmpeg 二次解析时发生 DNS 重绑定。
 
 脚本会按 `.env` 中 `ROS2_SETUP_PATHS` 的顺序依次 source 各个 setup.bash 文件：
 
@@ -361,7 +342,7 @@ ros2 topic list -t
 ffmpeg -rtsp_transport tcp -i 'rtsp://<相机地址>/<路径>' -t 3 -f null -
 ```
 
-浏览器不直接访问相机，真正连接 RTSP 的是后端进程，因此后端机器必须能访问相机所在网络。若相机只支持 UDP，可把 `RTSP_TRANSPORT` 改为 `udp` 后重启。请仅在可信网络中开放网络流转码接口。
+浏览器不直接访问相机，真正连接 RTSP 的是后端进程，因此后端机器必须能访问相机所在网络。请仅在可信网络中开放网络流转码接口。
 
 ## 验证
 

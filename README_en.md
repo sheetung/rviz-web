@@ -203,7 +203,7 @@ Local mode requires:
 - FFmpeg (converts RTSP into browser-compatible MJPEG)
 - curl (if `uv` is not installed, the startup script will install it via the official install script)
 
-The startup script reads `.env` from the project root, loads the ROS2 environment, validates the default `.rvizweb` config and ports, waits for frontend and backend health checks, and writes all output to `logs/`. The browser uses `APP_HOST:APP_PORT`; the backend port is parsed from `ROS_WS_URL` and defaults to `8000` when it is unset. With `APP_HOST=0.0.0.0`, the script prints the detected LAN addresses. Startup failures exit immediately; Ctrl+C stops the entire frontend and backend process group.
+The startup script reads `.env` from the project root, loads the ROS2 environment, validates the default `.rvizweb` config and ports, and waits for frontend and backend health checks. `LOG_ENABLED` defaults to `false`, so output is shown only in the terminal and nothing is written to `logs/`. When enabled, each startup creates `start.log`, `backend.log`, and `frontend.log` under a new `logs/YYYYMMDD-HHMMSS/` directory without overwriting earlier runs. The browser uses `APP_HOST:APP_PORT`; the backend port is parsed from `ROS_WS_URL` and defaults to `8000` when it is unset. With `APP_HOST=0.0.0.0`, the script prints the detected LAN addresses. Startup failures exit immediately; Ctrl+C stops the entire frontend and backend process group.
 
 The browser tab and top-left title can be changed in `.env`:
 
@@ -237,15 +237,11 @@ the current page and must be entered again after a reload.
 
 Connect waits for the backend to receive a valid first frame. The video window is created only after that probe succeeds; failures and missing video are reported through the page notification system.
 
-Backend transcoding can be tuned with `RTSP_TRANSPORT`, `RTSP_FRAME_RATE`,
-`RTSP_WIDTH`, `RTSP_JPEG_QUALITY`, `RTSP_STARTUP_TIMEOUT`,
-`RTSP_SESSION_TTL`, the `RTSP_MAX_*` process limits, and `FFMPEG_PATH`.
-Private destinations are denied by default; use `RTSP_ALLOWED_HOSTS` for exact
-camera hosts or explicitly enable `RTSP_ALLOW_PRIVATE_NETWORKS`. Hostnames are
-pinned to the validated IP before FFmpeg starts, preventing DNS rebinding during
-a second resolution.
-
-In normal mode, re-run `./start.sh` after changes to rebuild the frontend. In dev mode, changes take effect on Vite restart or environment reload.
+Backend transcoding, concurrency, and resource limits are built-in system
+parameters and are not read from `.env`. Project maintainers can change them in
+`backend/app/core/config.py` and redeploy. Private destinations are denied by
+default. Hostnames are pinned to the validated IP before FFmpeg starts,
+preventing DNS rebinding during a second resolution.
 
 The application listens on `127.0.0.1` by default. For LAN access, only set
 `APP_HOST=0.0.0.0`; the startup script derives proxy targets, health-check addresses,
@@ -253,9 +249,8 @@ and allowed browser origins. The application does not provide login authenticati
 restrict access with a firewall, trusted LAN, or VPN, and never expose its service
 ports directly to the public Internet.
 
-ROS publishing is restricted by `ROS_PUBLISH_TOPIC_ALLOWLIST` and
-`ROS_PUBLISH_TYPE_ALLOWLIST`; extend these lists explicitly for robot-specific
-control topics.
+ROS publishing is restricted by `ROS_PUBLISH_TOPIC_ALLOWLIST`; extend the topic
+list explicitly for robot-specific control topics.
 
 The script sources setup.bash files in the order specified by `ROS2_SETUP_PATHS` in `.env`:
 
@@ -340,7 +335,7 @@ Verify that FFmpeg on the backend host can reach and read the camera:
 ffmpeg -rtsp_transport tcp -i 'rtsp://<camera>/<path>' -t 3 -f null -
 ```
 
-The backend, not the browser, connects to RTSP. If a camera only supports UDP, set `RTSP_TRANSPORT=udp` and restart. Expose the transcoding API only on trusted networks.
+The backend, not the browser, connects to RTSP. Expose the transcoding API only on trusted networks.
 
 ## Verification
 

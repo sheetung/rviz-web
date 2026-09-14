@@ -10,11 +10,22 @@ LOG_DIR="$PROJECT_ROOT/logs"
 ENV_FILE="$PROJECT_ROOT/.env"
 BACKEND_PID=""
 FRONTEND_PID=""
+LOG_RUN_DIR=""
+START_LOG_FILE=""
+BACKEND_LOG_FILE=""
+FRONTEND_LOG_FILE=""
+LAST_STARTED_PID=""
 
-mkdir -p "$LOG_DIR"
+log() {
+  printf '[rvizweb] %s\n' "$*"
+  [[ -z "$START_LOG_FILE" ]] || printf '[rvizweb] %s\n' "$*" >> "$START_LOG_FILE"
+}
 
-log() { printf '[rvizweb] %s\n' "$*"; }
-fail() { printf '[rvizweb] ERROR: %s\n' "$*" >&2; exit 1; }
+fail() {
+  printf '[rvizweb] ERROR: %s\n' "$*" >&2
+  [[ -z "$START_LOG_FILE" ]] || printf '[rvizweb] ERROR: %s\n' "$*" >> "$START_LOG_FILE"
+  exit 1
+}
 
 load_env() {
   [[ -f "$ENV_FILE" ]] || return
@@ -50,6 +61,87 @@ load_ros() {
   set -u
 }
 
+configure_logging() {
+  local enabled="${LOG_ENABLED:-false}"
+  case "${enabled,,}" in
+    false) return ;;
+    true) ;;
+    *) fail "LOG_ENABLED must be true or false: $enabled" ;;
+  esac
+
+  mkdir -p "$LOG_DIR"
+  local timestamp candidate sequence=1
+  timestamp="$(date '+%Y%m%d-%H%M%S')"
+  candidate="$LOG_DIR/$timestamp"
+  while ! mkdir "$candidate" 2>/dev/null; do
+    ((sequence += 1))
+    candidate="$LOG_DIR/$timestamp-$sequence"
+  done
+  LOG_RUN_DIR="$candidate"
+  START_LOG_FILE="$LOG_RUN_DIR/start.log"
+  BACKEND_LOG_FILE="$LOG_RUN_DIR/backend.log"
+  FRONTEND_LOG_FILE="$LOG_RUN_DIR/frontend.log"
+  log "Logging to $LOG_RUN_DIR"
+}
+
+failure_output_hint() {
+  local component="${1:-}"
+  if [[ -n "$LOG_RUN_DIR" ]]; then
+    case "$component" in
+      backend) printf 'see %s' "$BACKEND_LOG_FILE" ;;
+      frontend) printf 'see %s' "$FRONTEND_LOG_FILE" ;;
+      *) printf 'see %s' "$LOG_RUN_DIR" ;;
+    esac
+  else
+    printf 'see the process output above'
+  fi
+}
+
+run_with_optional_log() {
+  local output_file="$1"
+  shift
+  if [[ -n "$output_file" ]]; then
+    "$@" >>"$output_file" 2>&1
+  else
+    "$@"
+  fi
+}
+
+start_in_background() {
+  local output_file="$1"
+  shift
+  if [[ -n "$output_file" ]]; then
+    "$@" >>"$output_file" 2>&1 &
+  else
+    "$@" &
+  fi
+  LAST_STARTED_PID=$!
+}
+
+build_frontend() {
+  local default_rvizweb_config="$1"
+  cd "$FRONTEND_DIR"
+  VITE_RVIZWEB_CONFIG="$default_rvizweb_config" npm run build
+}
+
+run_backend() {
+  local backend_host="$1" backend_port="$2"
+  cd "$BACKEND_DIR"
+  exec setsid uv run --no-sync uvicorn app.main:app --host "$backend_host" --port "$backend_port"
+}
+
+run_frontend() {
+  local frontend_mode="$1" app_host="$2" app_port="$3" default_rvizweb_config="$4"
+  cd "$FRONTEND_DIR"
+  if [[ "$frontend_mode" == "dev" ]]; then
+    export VITE_RVIZWEB_CONFIG="$default_rvizweb_config"
+    export CHOKIDAR_USEPOLLING="${CHOKIDAR_USEPOLLING:-true}"
+    export CHOKIDAR_INTERVAL="${CHOKIDAR_INTERVAL:-500}"
+    exec setsid npm run dev -- --host "$app_host" --port "$app_port"
+  fi
+  exec setsid npm run preview -- --host "$app_host" --port "$app_port"
+}
+
 check_command() {
   command -v "$1" >/dev/null 2>&1 || fail "Missing command: $1"
 }
@@ -59,7 +151,7 @@ is_initialized() {
     [[ -f "$ENV_FILE" ]] || exit 1
     command -v uv >/dev/null 2>&1 || exit 1
     command -v npm >/dev/null 2>&1 || exit 1
-    command -v "${FFMPEG_PATH:-ffmpeg}" >/dev/null 2>&1 || exit 1
+    command -v ffmpeg >/dev/null 2>&1 || exit 1
     [[ -x "$BACKEND_DIR/.venv/bin/python" ]] || exit 1
     [[ -d "$FRONTEND_DIR/node_modules" ]] || exit 1
   )
@@ -104,7 +196,7 @@ wait_for_http() {
   local max_attempts=$(( timeout_seconds * 5 ))
 
   for ((attempt=1; attempt<=max_attempts; attempt++)); do
-    kill -0 "$pid" 2>/dev/null || fail "$name exited during startup; see $LOG_DIR"
+    kill -0 "$pid" 2>/dev/null || fail "$name exited during startup; $(failure_output_hint "$name")"
     # Health checks target loopback services and must never be routed through
     # HTTP_PROXY/HTTPS_PROXY inherited from the user's shell.
     curl --noproxy '*' -fsS "$url" >/dev/null 2>&1 && return 0
@@ -192,9 +284,10 @@ start_local() {
   check_command ss
   check_command setsid
   load_env
+  configure_logging
   load_ros
 
-  check_command "${FFMPEG_PATH:-ffmpeg}"
+  check_command ffmpeg
 
   local app_host="${APP_HOST:-127.0.0.1}"
   local app_port="${APP_PORT:-3000}"
@@ -221,33 +314,20 @@ start_local() {
 
   if [[ "$frontend_mode" == "local" ]]; then
     log "Building frontend for normal local use"
-    (
-      cd "$FRONTEND_DIR"
-      VITE_RVIZWEB_CONFIG="$default_rvizweb_config" npm run build
-    ) >"$LOG_DIR/frontend.log" 2>&1 || fail "Frontend build failed; see $LOG_DIR/frontend.log"
+    run_with_optional_log "$FRONTEND_LOG_FILE" build_frontend "$default_rvizweb_config" \
+      || fail "Frontend build failed; $(failure_output_hint frontend)"
   fi
 
   trap cleanup INT TERM EXIT
 
   log "Starting backend on $backend_port"
-  (
-    cd "$BACKEND_DIR"
-    exec setsid uv run --no-sync uvicorn app.main:app --host "$backend_host" --port "$backend_port"
-  ) >"$LOG_DIR/backend.log" 2>&1 &
-  BACKEND_PID=$!
+  start_in_background "$BACKEND_LOG_FILE" run_backend "$backend_host" "$backend_port"
+  BACKEND_PID="$LAST_STARTED_PID"
 
   log "Starting frontend on $app_port ($frontend_mode mode)"
-  (
-    cd "$FRONTEND_DIR"
-    if [[ "$frontend_mode" == "dev" ]]; then
-      export VITE_RVIZWEB_CONFIG="$default_rvizweb_config"
-      export CHOKIDAR_USEPOLLING="${CHOKIDAR_USEPOLLING:-true}"
-      export CHOKIDAR_INTERVAL="${CHOKIDAR_INTERVAL:-500}"
-      exec setsid npm run dev -- --host "$app_host" --port "$app_port"
-    fi
-    exec setsid npm run preview -- --host "$app_host" --port "$app_port"
-  ) >>"$LOG_DIR/frontend.log" 2>&1 &
-  FRONTEND_PID=$!
+  start_in_background "$FRONTEND_LOG_FILE" run_frontend \
+    "$frontend_mode" "$app_host" "$app_port" "$default_rvizweb_config"
+  FRONTEND_PID="$LAST_STARTED_PID"
 
   wait_for_http "http://$backend_health_host:$backend_port/health" backend "$BACKEND_PID" 120
   wait_for_http "http://$frontend_health_host:$app_port" frontend "$FRONTEND_PID" 120
@@ -255,7 +335,7 @@ start_local() {
   log_access_urls "$app_host" "$app_port"
   log "Config:      rvizweb_configs/$default_rvizweb_config"
   wait -n "$BACKEND_PID" "$FRONTEND_PID"
-  fail "A service stopped unexpectedly; see $LOG_DIR"
+  fail "A service stopped unexpectedly; $(failure_output_hint)"
 }
 
 show_help() {

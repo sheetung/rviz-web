@@ -140,9 +140,7 @@ async def _validated_rtsp_destination(settings: Settings, value: str) -> str:
         ):
             raise ValueError(f"RTSP 目标地址不允许访问: {address}")
         if address.is_private and not settings.rtsp_allow_private_networks:
-            raise ValueError(
-                "RTSP 私网地址默认禁用；请使用 RTSP_ALLOWED_HOSTS 精确放行"
-            )
+            raise ValueError("RTSP 私网地址未被系统策略允许")
         if not address.is_private and not address.is_global:
             raise ValueError(f"RTSP 目标地址不允许访问: {address}")
     # 即使域名第一次解析到了公网地址，也不能让 FFmpeg 再次解析并被

@@ -24,7 +24,6 @@ def ensure_ros_operation_allowed(
     settings: Settings,
     operation: str,
     topic: str,
-    message_type: str | None = None,
 ) -> None:
     if not topic or len(topic) > 512 or not ROS_TOPIC_PATTERN.fullmatch(topic):
         raise ValueError("ROS topic 名称无效")
@@ -38,10 +37,3 @@ def ensure_ros_operation_allowed(
 
     if not any(fnmatch.fnmatchcase(topic, pattern) for pattern in allowed_topics):
         raise PermissionError(f"不允许 {operation} ROS topic: {topic}")
-
-    if operation == "publish":
-        allowed_types = set(split_csv(settings.ros_publish_type_allowlist))
-        if not message_type or message_type not in allowed_types:
-            raise PermissionError(
-                f"不允许发布 ROS 消息类型: {message_type or '<empty>'}"
-            )

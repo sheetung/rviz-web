@@ -52,14 +52,9 @@ RVizWeb 是一个面向 ROS2 的浏览器可视化工具。前端使用 Vue 3、
 | `VITE_APP_TITLE` | 浏览器标签页和页面左上角显示的应用标题 |
 | `CHOKIDAR_USEPOLLING` | 开发模式使用轮询代替 inotify；正常模式不读取该变量 |
 | `CHOKIDAR_INTERVAL` | 开发模式的文件轮询间隔，单位为毫秒 |
+| `LOG_ENABLED` | 是否为每次启动创建按时间命名的独立日志目录，默认 `false` |
 | `ROS_SUBSCRIBE_TOPIC_ALLOWLIST` | WebSocket 可订阅 Topic glob |
 | `ROS_PUBLISH_TOPIC_ALLOWLIST` | HTTP/WebSocket 可发布 Topic glob |
-| `ROS_PUBLISH_TYPE_ALLOWLIST` | 可发布 ROS 消息类型 |
-| `ROS_POINTCLOUD_MAX_HZ` | PointCloud2 转发到浏览器的最高频率；`0` 表示不限频 |
-| `ROS_POINTCLOUD_XYZ_ONLY` | 只转发当前点云渲染需要的 XYZ 字段，减少 PointCloud2 二进制载荷 |
-| `CONFIG_MAX_BYTES` | 单个 `.rvizweb` 文件的最大字节数 |
-| `CONFIG_NAME_MAX_LENGTH` | 配置文件名最大长度 |
-| `VITE_DEBUG` | 是否输出前端调试日志 |
 
 ROS 话题名不应放在 `.env` 中。Displays、Fixed Frame、odom 话题、目标话题和样式等用户状态属于 `.rvizweb` 配置。
 
@@ -96,12 +91,9 @@ ROS 话题名不应放在 `.env` 中。Displays、Fixed Frame、odom 话题、�
 ./start.sh dev
 ```
 
-脚本会读取 `.env`、加载 ROS2 环境、检查端口和依赖、启动两个进程并等待健康检查。日志写入：
-
-```text
-logs/backend.log
-logs/frontend.log
-```
+脚本会读取 `.env`、加载 ROS2 环境、检查端口和依赖、启动两个进程并等待健康检查。
+`LOG_ENABLED=false` 时输出只显示在终端，不创建日志。设为 `true` 后，每次启动会在
+`logs/YYYYMMDD-HHMMSS/` 下分别创建 `start.log`、`backend.log` 和 `frontend.log`。同一秒重复启动时目录名自动增加序号，不覆盖历史日志。
 
 默认加载 `rvizweb_configs/default.rvizweb`。临时指定其他配置：
 
@@ -258,4 +250,4 @@ echo "${ROS_LOCALHOST_ONLY:-0}"
 
 ### 配置未按预期恢复
 
-检查 `logs/backend.log`、浏览器控制台以及配置文件中的 `version`、`fixedFrame`、`displays` 等字段。读取失败时前端会保留当前状态，不会用损坏配置覆盖界面。
+检查启动终端输出（启用日志时检查 `logs/` 中对应启动目录）、浏览器控制台以及配置文件中的 `version`、`fixedFrame`、`displays` 等字段。读取失败时前端会保留当前状态，不会用损坏配置覆盖界面。

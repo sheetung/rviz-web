@@ -2,6 +2,22 @@
 
 本项目遵循语义化版本控制，整个工程统一使用一套版本号。
 
+## [Unreleased]
+
+### Changed
+
+- 新增 `LOG_ENABLED` 启动日志开关，默认关闭；启用后每次启动创建一个按时间命名的目录，分别写入 `start.log`、`backend.log` 和 `frontend.log`，不覆盖历日志。
+- 本地部署统一使用 `APP_HOST` 和 `APP_PORT` 作为浏览器入口，API 与 WebSocket 默认通过同源代理访问；`ROS_WS_URL` 仅用于需要直连的分离部署。
+- `.env.example` 只保留部署地址、ROS Domain、启动配置和 ROS 话题权限等用户参数。
+- 缓存、限流、消息大小、点云转发、配置备份和 RTSP 转码等高级项改为代码内置的系统参数，不再接受 `.env` 覆盖。
+- ROS 发布仍受 `ROS_PUBLISH_TOPIC_ALLOWLIST` 话题边界保护，但不再限制消息类型；当前 ROS2 环境可解析的消息类型均可使用。
+- FFmpeg 可执行程序固定从 `PATH` 中查找 `ffmpeg`，前端控制台调试输出默认关闭且不再由环境变量开启。
+
+### Removed
+
+- 移除 `BACKEND_PORT`、`FRONTEND_PORT`、`FRONTEND_HOST`、`FRONTEND_PUBLIC_HOST` 和 `VITE_ROS_WS_URL` 等旧部署变量，不提供兼容迁移。
+- 移除 `ROS_PUBLISH_TYPE_ALLOWLIST`、`VITE_DEBUG`、`FFMPEG_PATH` 以及 ROS、WebSocket、配置备份和 RTSP 的高级环境变量。
+
 ## [1.3.0] - 2026-07-25
 
 ### Added

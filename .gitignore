@@ -47,6 +47,8 @@ log/
 .idea/
 *.swp
 *.swo
+.gaents/
+.codex/
 
 # OS
 .DS_Store
