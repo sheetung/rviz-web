@@ -197,6 +197,14 @@ uv run python -m compileall -q app
 
 ## 优先级建议
 
+### P1：ROS1 适配（已制定方案，未实施）
+
+- 按 [ROS1 适配方案](docs/ros1-adaptation-plan.md) 分阶段推进，先验证 Noetic 与
+  当前 Python 依赖的运行边界，再实现适配器；不能仅更换 setup 路径宣称支持 ROS1。
+- 不新增用户配置的 `ROS_VERSION`；计划统一为 `ROS_SETUP_PATHS`，由加载环境选择实例版本。
+- 计划增加 `/ws/ros1`、`/ws/ros2` 及默认入口，并同步 HTTP API 的后端选择，错版本明确拒绝。
+- 本轮仅记录方案；`.env`、代码、代理和 Docker 尚未更改。
+
 ### P1：测试与稳定性
 
 - 2026-09-15：三个正式启动入口已固定 `--ws websockets`，恢复发送背压；
