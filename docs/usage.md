@@ -250,7 +250,7 @@ Docker Desktop 环境的 ROS2 DDS 发现需要单独配置和验证。
 - FFmpeg（用于把浏览器不支持的 RTSP 转为 MJPEG）
 - curl（若未安装 `uv`，启动脚本会通过官方安装脚本自动安装）
 
-启动脚本会读取项目根目录 `.env`，加载 ROS2 环境，检查默认 `.rvizweb` 配置和端口，并等待前后端健康检查。`LOG_ENABLED` 默认为 `false`，此时输出只显示在终端，不写入 `logs/`；设为 `true` 时，每次启动会在 `logs/YYYYMMDD-HHMMSS/` 中分别创建 `start.log`、`backend.log` 和 `frontend.log`，且不覆盖历史目录。浏览器始终通过 `APP_HOST:APP_PORT` 访问；后端端口从 `ROS_WS_URL` 自动解析，留空时默认为 `8000`。设置 `APP_HOST=0.0.0.0` 时，脚本会自动显示检测到的局域网地址。启动失败会立即退出；Ctrl+C 会停止整个前后端进程组。
+启动脚本会读取项目根目录 `.env`，按 `ROS_WS_URL` 的版本后缀加载对应 ROS1/ROS2 环境，检查默认 `.rvizweb` 配置和端口，并等待前后端健康检查。`LOG_ENABLED` 默认为 `false`，此时输出只显示在终端，不写入 `logs/`；设为 `true` 时，每次启动会在 `logs/YYYYMMDD-HHMMSS/` 中分别创建 `start.log`、`backend.log` 和 `frontend.log`，且不覆盖历史目录。浏览器始终通过 `APP_HOST:APP_PORT` 访问；后端固定监听内部 `8000` 端口。设置 `APP_HOST=0.0.0.0` 时，脚本会自动显示检测到的局域网地址。启动失败会立即退出；Ctrl+C 会停止整个前后端进程组。
 
 浏览器标签页和页面左上角标题可在 `.env` 中修改：
 
@@ -294,7 +294,7 @@ ROS 发布默认只允许 `/goal_pose`、`/initialpose` 和 `/cmd_vel`。
 RTSP 默认禁止私网、回环、链路本地和保留地址。域名在策略校验后会固定到
 已验证的 IP，避免 FFmpeg 二次解析时发生 DNS 重绑定。
 
-脚本会按 `.env` 中 `ROS2_SETUP_PATHS` 的顺序依次 source 各个 setup.bash 文件：
+默认 `ROS_WS_URL=/ws/ros2` 时，脚本会按 `.env` 中 `ROS2_SETUP_PATHS` 的顺序依次 source 各个 setup.bash 文件；改为 `/ws/ros1` 时使用 `ROS1_SETUP_PATHS`：
 
 ```bash
 source /opt/ros/humble/setup.bash

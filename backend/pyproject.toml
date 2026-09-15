@@ -11,6 +11,12 @@ dependencies = [
   "uvicorn[standard]==0.51.0",
 ]
 
+[project.optional-dependencies]
+ros1 = [
+    "defusedxml>=0.7.1",
+    "rospkg>=1.6.3",
+]
+
 [dependency-groups]
 dev = [
   "black==26.5.1",

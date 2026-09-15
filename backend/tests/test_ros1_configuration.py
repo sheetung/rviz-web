@@ -45,7 +45,7 @@ def test_setup_missing_and_mixed_versions(tmp_path):
                 "-c",
                 f'source "{ROOT}/scripts/ros-environment.sh"; load_ros_environment',
             ],
-            env={**env, "ROS_SETUP_PATHS": paths},
+            env={**env, "ROS_WS_URL": "/ws/ros1", "ROS1_SETUP_PATHS": paths},
             capture_output=True,
         )
         assert (result.returncode == 0) == success

@@ -11,7 +11,7 @@ const frontendVersion = frontendPackage.version || '0.0.0+unknown'
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '..', '')
   const appPort = Number(env.APP_PORT || 3000)
-  const rosWebSocketUrl = env.ROS_WS_URL || ''
+  const rosWebSocketUrl = env.ROS_WS_URL ?? '/ws/ros2'
   const backendPort = '8000'
   const backendProxy = {
     '/ros1/api': { target: `http://127.0.0.1:${backendPort}`, changeOrigin: true },

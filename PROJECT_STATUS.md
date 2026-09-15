@@ -34,7 +34,7 @@ Gateway 和公共应用层不依赖具体 ROS 版本；专用代码分别集中�
 - 启动时以非执行方式解析 `.env`，文件由安装脚本收紧为 `0600`。
 - 前后端默认绑定 `127.0.0.1`；应用层不提供登录鉴权，公网部署必须由 VPN、
   防火墙或可信反向代理提供访问控制。
-- 浏览器 WebSocket 可通过完整的 `ROS_WS_URL` 配置；留空时使用同源 `/ws`。
+- 浏览器 WebSocket 可通过完整的 `ROS_WS_URL` 配置；默认 `/ws/ros2`，可改为 `/ws/ros1`；留空时使用同源 `/ws`。
 - 支持通过 `RVIZWEB_CONFIG` 选择启动配置，默认使用 `default.rvizweb`。
 - 前后端健康检查和退出时进程清理已集成到启动脚本；日志默认关闭，启用后每次启动创建一个按时间命名的目录，分别记录启动脚本、后端和前端输出。
 - `/docs` 使用仓库内 Swagger UI 5.9.0 资源，不依赖浏览器访问外部 CDN；`/redoc` 保持关闭。
@@ -155,7 +155,7 @@ Gateway 和公共应用层不依赖具体 ROS 版本；专用代码分别集中�
 ### ROS2 发行版与工作空间差异
 
 `.env.example` 默认加载 ROS2 Humble。其他发行版或工作空间应通过
-`ROS_SETUP_PATHS` 配置，无需修改启动脚本。
+`ROS1_SETUP_PATHS` / `ROS2_SETUP_PATHS` 配置，无需修改启动脚本。
 
 ### TF 时间语义仍有边界
 
@@ -200,7 +200,7 @@ uv run python -m compileall -q app
 
 ### P1：ROS1 部署验收（核心适配已实现）
 
-- 已实现适配器与环境、WS/HTTP 版本选择，`.env` 统一使用 `ROS_SETUP_PATHS`。
+- 已实现适配器与环境、WS/HTTP 版本选择，`.env` 统一使用 `ROS1_SETUP_PATHS` / `ROS2_SETUP_PATHS`。
 - 原生 ROS1 集成、原始 bag 120 帧加速输入及 ROS2 点云回归已通过。
 - 已提供 Ubuntu 22.04 ROS1 容器方案；Docker 构建、局域网互通和长时间稳定性尚未验证。
 - 按 [ROS1 测试指南](docs/ros1-testing.md) 验收；不要直接用 Noetic 的 Python 3.8 创建本项目后端环境。

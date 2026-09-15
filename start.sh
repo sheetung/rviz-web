@@ -10,6 +10,7 @@ LOG_DIR="$PROJECT_ROOT/logs"
 ENV_FILE="$PROJECT_ROOT/.env"
 BACKEND_PID=""
 FRONTEND_PID=""
+ROS_MASTER_PID=""
 LOG_RUN_DIR=""
 START_LOG_FILE=""
 BACKEND_LOG_FILE=""
@@ -124,7 +125,34 @@ build_frontend() {
 run_backend() {
   local backend_host="$1" backend_port="$2"
   cd "$BACKEND_DIR"
-  exec setsid uv run --no-sync uvicorn app.main:app --host "$backend_host" --port "$backend_port" --ws websockets
+  exec setsid "$BACKEND_DIR/.venv/bin/python" -m uvicorn app.main:app --host "$backend_host" --port "$backend_port" --ws websockets
+}
+
+run_ros_master() {
+  exec setsid "$BACKEND_DIR/.venv/bin/python" "$PROJECT_ROOT/scripts/ros1-master.py" run
+}
+
+ensure_ros_master() {
+  [[ "$ROS_VERSION" == 1 ]] || return 0
+  local helper="$PROJECT_ROOT/scripts/ros1-master.py"
+  local python="$BACKEND_DIR/.venv/bin/python"
+  local autostart="${ROS1_AUTOSTART_MASTER:-false}"
+  [[ "$autostart" == true || "$autostart" == false ]] || fail "ROS1_AUTOSTART_MASTER must be true or false"
+  if "$python" "$helper" check >/dev/null 2>&1; then
+    log "Using ROS1 Master: ${ROS_MASTER_URI:-http://127.0.0.1:11311}"
+    return 0
+  fi
+  [[ "$autostart" == true ]] || fail "ROS1 Master unavailable: ${ROS_MASTER_URI:-http://127.0.0.1:11311}. Start your Master, correct ROS_MASTER_URI, or set ROS1_AUTOSTART_MASTER=true for a local Master."
+  "$python" "$helper" validate-local || fail "Cannot start a remote ROS Master"
+  log "Starting local ROS1 Master"
+  start_in_background "$START_LOG_FILE" run_ros_master
+  ROS_MASTER_PID="$LAST_STARTED_PID"
+  for _ in {1..30}; do
+    kill -0 "$ROS_MASTER_PID" 2>/dev/null || fail "Local ROS1 Master exited; check its output and run ./start.sh sync if dependencies are missing"
+    "$python" "$helper" check >/dev/null 2>&1 && return 0
+    sleep 0.2
+  done
+  fail "Local ROS1 Master did not become ready"
 }
 
 run_frontend() {
@@ -147,7 +175,7 @@ is_initialized() {
   (
     [[ -f "$ENV_FILE" ]] || exit 1
     command -v uv >/dev/null 2>&1 || exit 1
-    command -v npm >/dev/null 2>&1 || exit 1
+    check_frontend_runtime || exit 1
     command -v ffmpeg >/dev/null 2>&1 || exit 1
     [[ -x "$BACKEND_DIR/.venv/bin/python" ]] || exit 1
     [[ -d "$FRONTEND_DIR/node_modules" ]] || exit 1
@@ -161,7 +189,7 @@ ensure_initialized() {
   [[ -x "$install_script" ]] || fail "Installation script is missing or not executable: $install_script"
   log "Project is not initialized; running install.sh"
   "$install_script"
-  hash -r
+  configure_frontend_runtime
   is_initialized || fail "Installation completed but the project is still not initialized"
 }
 
@@ -244,25 +272,27 @@ log_access_urls() {
 cleanup() {
   trap - INT TERM EXIT
   log "Stopping services"
-  for pid in "$FRONTEND_PID" "$BACKEND_PID"; do
+  for pid in "$FRONTEND_PID" "$BACKEND_PID" "$ROS_MASTER_PID"; do
     [[ -n "$pid" ]] || continue
     kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
   done
   for _ in {1..30}; do
     local alive=0
-    for pid in "$FRONTEND_PID" "$BACKEND_PID"; do
+    for pid in "$FRONTEND_PID" "$BACKEND_PID" "$ROS_MASTER_PID"; do
       [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null && alive=1
     done
     [[ "$alive" -eq 0 ]] && return
     sleep 0.1
   done
-  for pid in "$FRONTEND_PID" "$BACKEND_PID"; do
+  for pid in "$FRONTEND_PID" "$BACKEND_PID" "$ROS_MASTER_PID"; do
     [[ -n "$pid" ]] && kill -KILL -- "-$pid" 2>/dev/null || true
   done
 }
 
 start_local() {
   local frontend_mode="${1:-local}"
+  source "$PROJECT_ROOT/scripts/frontend-runtime.sh"
+  configure_frontend_runtime
   ensure_initialized
   check_command curl
   check_command uv
@@ -295,18 +325,19 @@ start_local() {
 
   [[ "$default_rvizweb_config" == *.rvizweb ]] || fail "Default frontend config must use the .rvizweb suffix"
   [[ -f "$PROJECT_ROOT/rvizweb_configs/$default_rvizweb_config" ]] || fail "Default frontend config not found: rvizweb_configs/$default_rvizweb_config"
-  local ros_module=rclpy
-  [[ "$ROS_VERSION" != 1 ]] || ros_module=rospy
-  "$BACKEND_DIR/.venv/bin/python" -c "import $ros_module" \
-    || fail "$ros_module is unavailable in the backend Python; check ROS_SETUP_PATHS and Python compatibility"
+  check_ros_python "$BACKEND_DIR/.venv/bin/python" \
+    || fail "ROS Python imports failed; run ./start.sh sync and check ROS1_SETUP_PATHS / ROS2_SETUP_PATHS and Python compatibility"
+
+  trap cleanup EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  ensure_ros_master
 
   if [[ "$frontend_mode" == "local" ]]; then
     log "Building frontend for normal local use"
     run_with_optional_log "$FRONTEND_LOG_FILE" build_frontend "$default_rvizweb_config" \
       || fail "Frontend build failed; $(failure_output_hint frontend)"
   fi
-
-  trap cleanup INT TERM EXIT
 
   log "Starting backend on $backend_port"
   start_in_background "$BACKEND_LOG_FILE" run_backend "$backend_host" "$backend_port"
@@ -322,7 +353,9 @@ start_local() {
 
   log_access_urls "$app_host" "$app_port"
   log "Config:      rvizweb_configs/$default_rvizweb_config"
-  wait -n "$BACKEND_PID" "$FRONTEND_PID"
+  local -a service_pids=("$BACKEND_PID" "$FRONTEND_PID")
+  [[ -z "$ROS_MASTER_PID" ]] || service_pids+=("$ROS_MASTER_PID")
+  wait -n "${service_pids[@]}"
   fail "A service stopped unexpectedly; $(failure_output_hint)"
 }
 

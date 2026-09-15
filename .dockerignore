@@ -1,6 +1,7 @@
 .git
 .agents
 .codex
+.cache
 .env
 .env.*
 logs

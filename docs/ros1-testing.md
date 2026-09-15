@@ -15,7 +15,7 @@
 ```dotenv
 ROS_MASTER_URI=http://192.168.1.10:11311
 ROS_IP=192.168.1.100
-ROS_WS_URL=
+ROS_WS_URL=/ws/ros1
 ```
 
 `ROS_IP` 是运行 RVizWeb 容器的宿主机局域网地址，不是 Master 地址，除非两者同机。
@@ -41,12 +41,17 @@ Master 和节点须双向可达，TCPROS 会使用动态端口，不只是开放
 如果机器已经有能被后端 Python 导入的 ROS1 包，可不用容器：
 
 ```dotenv
-ROS_SETUP_PATHS="/你的ROS1环境/setup.bash /你的同版本工作空间/devel/setup.bash"
+ROS1_SETUP_PATHS="/你的ROS1环境/setup.bash /你的同版本工作空间/devel/setup.bash"
 ROS_MASTER_URI=http://192.168.1.10:11311
 ROS_IP=192.168.1.100
-ROS_WS_URL=
+ROS_WS_URL=/ws/ros1
 APP_HOST=0.0.0.0
 ```
+
+原生安装脚本在 ROS1 模式下使用 `uv sync --frozen --no-dev --extra ros1`，
+自动安装锁定的 `rospkg` 及其依赖，并在同步后检查 `rospy` 和消息导入。
+已有环境缺包时运行 `./start.sh sync`；仅依赖 `--system-site-packages` 不能保证
+uv 管理的 Python 能访问系统 Python 的 ROS 辅助包。
 
 setup 文件必须由可信部署提供，导出 ROS_VERSION=1 及正确 Python/消息搜索路径。
 Ubuntu 22.04 原生 ROS1 包部署可参考 `docker/ros1-setup.bash`，先自行安装
@@ -63,11 +68,21 @@ backend/.venv/bin/python -c 'import rospy, roslib.message; from sensor_msgs.msg 
 后端不能用 Python 3.8 运行，且 ROS1 原生 Python 扩展、自定义消息必须与后端解释器兼容。
 无法满足时用独立容器，不降级整个 Web 后端。不要在 source 了 Humble 的终端叠加 Noetic。
 启动脚本会拒绝缺失 setup、混合 ROS_VERSION/ROS_DISTRO，以及 `.env` 手填 ROS_VERSION。
-`ROS2_SETUP_PATHS` 已删除，不保留旧名兼容。当前本机 `.env` 仍保留 Humble，仅更名并加入
-ROS1 网络配置占位，未切换当前实例。
+`ROS1_SETUP_PATHS` 与 `ROS2_SETUP_PATHS` 分别配置两套环境，取代 `ROS_SETUP_PATHS`。
+默认 `ROS_WS_URL=/ws/ros2`；原生 ROS1 启动时改为 `/ws/ros1`，并配置 `ROS1_SETUP_PATHS`。
+ROS1 容器内默认使用 `/app/ros1-setup.bash`，前端和启动环境均默认选择 ROS1。
 
 自定义消息需把对应工作空间部署到 ROS1 运行环境并 source；不要向容器挂载另一 Python/
 系统版本编译的二进制扩展并假设可用。未知消息类型会明确报错。
+
+## 本机 Master 自动启动
+
+原生 `start.sh` 会在构建前检查 `ROS_MASTER_URI`，不可达时明确报错。
+本机测试可配置 `ROS1_AUTOSTART_MASTER=true`，并使用回环地址（例如
+`http://127.0.0.1:11311`）。脚本会复用已有 Master，或启动一个本机 Master；
+只关闭自己启动的 Master。该模式不启动机器人驱动或传感器，也不启动 rosout。
+远程机器人保持 `false` 并填写实际 Master 地址。ROS2 不执行这项检查。
+ROS1 Master 的 `defusedxml` 依赖由 `ros1` 依赖组安装。
 
 ## WS 与 API 选择
 
@@ -113,3 +128,27 @@ ROS1 网络配置占位，未切换当前实例。
 可复现实测脚本 `scripts/check_ros1_runtime.py [原始ROS1.bag]`，需要 rospy、rosmaster、
 标准消息、后端依赖；可选 bag 验证另需 rosbags。使用独立测试端口，不连接实际机器人。
 测试脚本故意覆盖自身进程的 Master/ROS_IP，不修改用户配置。
+
+## 无雷达模拟点云
+
+终端一运行 `./start.sh`；终端二在项目根目录运行：
+
+```bash
+./scripts/demo-pointcloud.sh
+```
+
+脚本按 `.env` 加载 ROS1 环境，默认每秒 5 帧同步发布：
+
+- `/demo/points`：`sensor_msgs/PointCloud2`，坐标系为 `demo_lidar`。
+- `/demo/odom`：`nav_msgs/Odometry`，父坐标系 `map`、子坐标系 `demo_lidar`。
+- `/tf`：`map → demo_lidar`，与 odom 和点云使用相同时间戳和位姿。
+
+雷达在半径 2 米的圆形轨迹上以 0.4 m/s 移动，场景包含固定的地面、四根立柱和球体。
+点云按传感器位姿转换到局部坐标，模拟 360° 水平视角、32 个垂直通道（-30° 到 15°），
+量程默认为 8 米，每束保留最近的表面采样点。这是采样近似模拟，不是物理级光线追踪。
+
+在页面将 Fixed Frame 设为 `map`，添加 PointCloud2 显示项并选择 `/demo/points`；
+在 Global Options 中选择 odom 话题 `/demo/odom`，可启用模型和轨迹查看运动。
+`map` 视角下固定场景不应跟着雷达整体移动，但扫描到的点会变化；
+将 Fixed Frame 改为 `demo_lidar` 可观察雷达自身视角下的环境运动。
+按 Ctrl+C 停止发布；可用 `--rate 10 --duration 30 --range 6` 调整频率、运行时间和量程。

@@ -48,7 +48,7 @@ HTTP API ─────→ RosApplication（权限、客户端所有权、消�
 - 类型名称统一为 `package/msg/Type`；两段式名称仅在边界规范化。
   名称规范化不代表 ROS1/ROS2 消息结构相同；各适配器负责处理时间、
   Header、嵌套消息及保留消息语义。
-- 单实例单版本，由 `ROS_SETUP_PATHS` 加载的环境选择；不在 `.env` 设置 `ROS_VERSION`。
+- 单实例单版本，按 `ROS_WS_URL` 版本后缀加载 `ROS1_SETUP_PATHS` 或 `ROS2_SETUP_PATHS`；不在 `.env` 设置 `ROS_VERSION`。
   `/ws/ros1`、`/ws/ros2` 检查运行版本，`/ws` 使用当前实例；HTTP API 跟随连接选择。
   详见 [ROS1 测试指南](docs/ros1-testing.md)。
 - 测试使用假适配器覆盖共享订阅、会话发布、关闭清理，并在子进程中禁止 ROS
@@ -58,18 +58,24 @@ HTTP API ─────→ RosApplication（权限、客户端所有权、消�
 
 - ROS2 或与后端 Python 兼容的 ROS1 环境；示例配置使用 ROS2 Humble。
 - Python 3.10–3.12。
-- Node.js 20.19 或更高版本（Vite 8 要求）。
+- Node.js / npm 的精确版本分别固定在 `.node-version` / `.npm-version`。
+  安装脚本检查版本，缺失或不匹配时从官网下载并校验，安装到项目 `.cache/`；
+  启动脚本自动复用该环境，无需修改系统 Node 或手动设置 PATH。
+  `.env` 的 `NODE_DOWNLOAD_URLS` 配置按顺序尝试的 HTTPS 源（清华、npmmirror、官网）；
+  每次下载使用同一个源的包及 SHA-256 清单，失败或校验不符时尝试下一个源。
+  清华地址见 [官方帮助](https://mirrors.tuna.tsinghua.edu.cn/help/nodejs-release/)。
+  `NPM_CONFIG_REGISTRY` 单独设置 npm 依赖仓库，默认示例使用 npmmirror，不修改系统 npm 配置。
 - npm、curl、`ss`、`setsid`。
 - uv；如果系统中没有，`start.sh` 会通过 uv 官方安装脚本安装。
 
-启动脚本会按 `.env` 中的 `ROS_SETUP_PATHS` 顺序加载，例如：
+启动脚本根据 `ROS_WS_URL` 选择对应路径列表并顺序加载。默认 `/ws/ros2` 使用 `ROS2_SETUP_PATHS`，例如：
 
 ```text
 /opt/ros/humble/setup.bash
 <your_workspace>/install/setup.bash
 ```
 
-其他工作空间直接追加到 `ROS_SETUP_PATHS`，不需要修改启动脚本；不能混合 ROS1 / ROS2 环境。
+其他工作空间直接追加到对应的 `ROS1_SETUP_PATHS` 或 `ROS2_SETUP_PATHS`，不需要修改启动脚本；不能混合 ROS1 / ROS2 环境。
 
 ## 环境配置
 
@@ -82,7 +88,9 @@ HTTP API ─────→ RosApplication（权限、客户端所有权、消�
 | `ROS_DOMAIN_ID` | ROS2 DDS 通信域；未设置该变量的 ROS2 设备默认使用 `0` |
 | `APP_HOST` | 应用对外绑定地址；局域网访问设为 `0.0.0.0` |
 | `APP_PORT` | 浏览器访问端口；API 和 WebSocket 自动同源代理 |
-| `ROS_WS_URL` | 可选的浏览器直连 WebSocket 地址；留空使用同源 `/ws` |
+| `ROS_WS_URL` | 默认 `/ws/ros2`；改为 `/ws/ros1` 时启动加载 ROS1 环境；留空使用同源 `/ws` 和 ROS2 环境 |
+| `ROS1_SETUP_PATHS` | ROS1 安装及工作空间 setup 路径，空格分隔 |
+| `ROS2_SETUP_PATHS` | ROS2 安装及工作空间 setup 路径，空格分隔 |
 | `VITE_APP_TITLE` | 浏览器标签页和页面左上角显示的应用标题 |
 | `CHOKIDAR_USEPOLLING` | 开发模式使用轮询代替 inotify；正常模式不读取该变量 |
 | `CHOKIDAR_INTERVAL` | 开发模式的文件轮询间隔，单位为毫秒 |
@@ -94,10 +102,8 @@ ROS 话题名不应放在 `.env` 中。Displays、Fixed Frame、odom 话题、�
 
 应用层不提供登录鉴权。局域网部署应通过绑定地址、防火墙或 VPN 限制访问范围，不能将后端、前端或反向代理端口直接暴露到公网。
 
-正常部署无需配置后端 IP、API URL、WebSocket URL 或 CORS。启动脚本会根据
-`APP_HOST`、`APP_PORT` 和 `ROS_WS_URL` 自动推导这些内部地址。只有前后端分离
-部署时才应使用 `ROS_WS_URL`、`VITE_BACKEND_PUBLIC_URL` 或 `CORS_ORIGINS`
-等高级覆盖项。
+正常部署通过 `APP_HOST`、`APP_PORT` 配置浏览器入口，通过 `ROS_WS_URL` 选择 ROS 版本。
+前后端分离部署可将 `ROS_WS_URL` 设为完整公开 URL，并按需配置 `CORS_ORIGINS`。
 
 ## 安装与启动
 
@@ -110,7 +116,9 @@ ROS 话题名不应放在 `.env` 中。Displays、Fixed Frame、odom 话题、�
 该命令会：
 
 1. 创建带 `--system-site-packages` 的 `backend/.venv`，以便访问系统 ROS2 Python 包。
-2. 使用 `uv sync --active` 同步后端依赖。
+2. 使用 `uv sync --active --frozen --no-dev` 同步后端运行依赖；ROS1 额外启用 `--extra ros1`。
+   新建 ROS2 虚拟环境时使用加载 ROS2 后能导入 `rclpy` 的 `python3`，避免 uv 自动选择不兼容的解释器。
+   已有虚拟环境仍需与当前 ROS 版本的 Python 扩展兼容，切换版本不会自动重建环境。
 3. 使用 `npm ci` 安装前端锁定依赖。
 
 正常使用模式启动前后端：
@@ -150,7 +158,7 @@ RVIZWEB_CONFIG=default.rvizweb ./start.sh local
 
 Vite 会将 `/api` 和 `/ws` 请求代理到本地后端，因此日常使用通常只需访问前端地址。
 
-本地代理固定连接内部后端 `8000` 端口。`ROS_WS_URL` 留空使用同源 `/ws`；指定远端版本入口时，浏览器的 HTTP API 同时指向该远端对应版本。URL 不改变本地后端运行版本或端口。
+本地代理固定连接内部后端 `8000` 端口。`ROS_WS_URL` 留空使用同源 `/ws`；指定远端版本入口时，浏览器的 HTTP API 同时指向该远端对应版本。启动时按 URL 的版本后缀加载对应环境，无版本后缀时默认 ROS2；URL 不改变本地后端监听地址或端口。
 
 ## 核心功能与消息类型
 

@@ -102,8 +102,20 @@ install_dependencies() {
   log "Installing/updating backend dependencies"
   (
     cd "$BACKEND_DIR"
-    [[ -d .venv ]] || uv venv --system-site-packages .venv
-    VIRTUAL_ENV="$BACKEND_DIR/.venv" uv sync --active
+    local -a ros_dependencies=()
+    [[ "$ROS_VERSION" != 1 ]] || ros_dependencies=(--extra ros1)
+    if [[ ! -d .venv ]]; then
+      if [[ "$ROS_VERSION" == 2 ]]; then
+        local ros_python
+        ros_python="$(ros2_python_for_venv)" \
+          || fail "The sourced ROS2 environment needs a Python 3.10–3.12 interpreter that can import rclpy"
+        uv venv --python "$ros_python" --system-site-packages .venv
+      else
+        uv venv --system-site-packages .venv
+      fi
+    fi
+    VIRTUAL_ENV="$BACKEND_DIR/.venv" uv sync --active --frozen --no-dev "${ros_dependencies[@]}"
+    check_ros_python "$BACKEND_DIR/.venv/bin/python" || fail "ROS Python dependencies are unavailable after installation"
   )
 
   log "Installing/updating frontend dependencies"
@@ -113,6 +125,8 @@ install_dependencies() {
 main() {
   ensure_env
   load_env
+  source "$PROJECT_ROOT/scripts/frontend-runtime.sh"
+  ensure_frontend_runtime || fail "Unable to install pinned frontend runtime"
   load_ros
   ensure_uv
   check_command npm
@@ -123,4 +137,6 @@ main() {
   log "Installation complete"
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

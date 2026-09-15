@@ -7,6 +7,6 @@ def selected_middleware():
     version = os.environ.get("ROS_VERSION")
     if version not in ("1", "2"):
         raise RuntimeError(
-            "Source ROS_SETUP_PATHS first: ROS_VERSION must be provided by the ROS environment"
+            "Source ROS1_SETUP_PATHS / ROS2_SETUP_PATHS first: ROS_VERSION must be provided by the ROS environment"
         )
     return f"ros{version}"
