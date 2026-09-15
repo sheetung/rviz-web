@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-source /opt/ros/humble/setup.bash
+source /app/scripts/ros-environment.sh
+load_ros_environment
 
 backend_pid=""
 nginx_pid=""

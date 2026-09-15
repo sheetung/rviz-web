@@ -6,6 +6,11 @@
 
 ### Added
 
+- ROS1 原生 rospy 适配器：图查询、订阅/发布、消息结构转换、二进制点云与 latched/static TF 保留；复用公共应用层及前端显示。
+- `/ws/ros1`、`/ws/ros2` 和对应版本 HTTP API，错版本明确拒绝；默认 `/ws` 保留当前实例语义。
+- ROS1 Dockerfile、Compose、双实例代理示例及部署测试指南；新增原生 ROS1 集成脚本和边界回归测试。
+- 环境路径统一为 `ROS_SETUP_PATHS`（移除旧名称，不提供别名），运行版本由加载的 ROS 环境决定；远端 WS 同步选择 HTTP API，不再改变本地后端端口。
+
 - 室外累积地图回放新增雷达 Odometry 与 `map → mapping_lidar` TF，支持网页 Follow Frame 和位置轨迹展示，不修改原始地图消息。
 
 - 完成 OutdoorRoad_cut0 室外累积地图生成：约 78.7 m 轨迹、311 个完整快照、约 31.5 万点；转换工具支持指定 GNSS 参考话题，补充室外回放说明。

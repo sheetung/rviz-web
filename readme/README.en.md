@@ -85,6 +85,8 @@ The application automatically subscribes to `/tf` and `/tf_static` to transform 
 
 ## Quick Start
 
+ROS1 has a dedicated adapter and deployment configuration; see the [ROS1 deployment and testing guide (Chinese)](../docs/ros1-testing.md). The defaults below use ROS2 Humble. Each backend runs one ROS runtime selected by `ROS_SETUP_PATHS`; `/ws/ros1` and `/ws/ros2` validate the selected backend version.
+
 ### Option 1: Run Locally
 
 Prepare a working ROS 2 environment and the following dependencies:
@@ -106,13 +108,13 @@ cp .env.example .env
 Edit `.env` to set the ROS 2 environment path and match the robot's communication domain:
 
 ```dotenv
-ROS2_SETUP_PATHS="/opt/ros/humble/setup.bash"
+ROS_SETUP_PATHS="/opt/ros/humble/setup.bash"
 ROS_DOMAIN_ID=0
 APP_HOST=127.0.0.1
 APP_PORT=3000
 ```
 
-For custom messages, append the workspace's `install/setup.bash` to `ROS2_SETUP_PATHS`, separating paths with spaces. Set `APP_HOST` to `0.0.0.0` for LAN access.
+For custom messages, append the workspace's `install/setup.bash` to `ROS_SETUP_PATHS`, separating paths with spaces. Set `APP_HOST` to `0.0.0.0` for LAN access.
 
 ```bash
 # Run on first installation or after dependency changes; system packages may require sudo
@@ -163,7 +165,7 @@ The default configuration, [`rvizweb_configs/default.rvizweb`](../rvizweb_config
 
 ### Configuration and Troubleshooting
 
-- **Topics are missing:** Check `ROS_DOMAIN_ID` and `ROS2_SETUP_PATHS`, and confirm that the backend sourced the correct workspace.
+- **Topics are missing:** Check `ROS_DOMAIN_ID` and `ROS_SETUP_PATHS`, and confirm that the backend sourced the correct workspace.
 - **Objects are misplaced or missing:** Check the Fixed Frame, TF chain, and status of the corresponding Display.
 - **RTSP connection fails:** Confirm that the backend can run FFmpeg and reach the video source. The default policy blocks private networks and other restricted addresses; maintainers must adjust the policy for trusted cameras in `backend/app/core/config.py` and redeploy.
 - **More details:** See the [complete user guide (Chinese)](../docs/usage.md) for topic discovery, configuration fields, video endpoints, logging, separate deployment, and FAQs.

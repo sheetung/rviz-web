@@ -6,6 +6,19 @@ import {
   createWebSocketUrl
 } from '../src/utils/websocketUrl.js'
 
+test('versioned ROS websocket selects the matching HTTP API including prefix', () => {
+  const location = { protocol: 'https:', host: 'ui.example' }
+  assert.equal(createApiBaseUrl(location, '', 'wss://robot.example/proxy/ws/ros1'),
+    'https://robot.example/proxy/ros1/api/v1')
+  assert.equal(createApiBaseUrl(location, '', 'wss://robot.example/ws/ros2'),
+    'https://robot.example/ros2/api/v1')
+  assert.equal(createApiBaseUrl(location, '', 'wss://robot.example/ws'),
+    'https://robot.example/api/v1')
+  assert.throws(() => createApiBaseUrl(location, 'https://other.example', 'wss://robot.example/ws/ros1'))
+  assert.throws(() => createWebSocketUrl(location, 'ws://robot.example/ws'))
+  assert.throws(() => createApiBaseUrl(location, '', 'wss://robot.example/ws/ros3'))
+})
+
 test('websocket URL uses same-origin proxy by default', () => {
   assert.equal(
     createWebSocketUrl(

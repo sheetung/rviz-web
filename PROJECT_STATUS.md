@@ -21,8 +21,8 @@ DDS 容器网络仍需要在目标设备上集成验证。
 
 后端已开始按多 ROS 版本方向整理边界：FastAPI 入口依赖 `RosService` 应用契约，
 当前 rclpy 实现明确为 `Ros2Adapter`；消息类型在系统内部统一为
-`package/msg/Type`，ROS1 两段式类型只在输入边界转换。ROS1 适配器尚未实现，
-Gateway 和公共应用层已从 ROS2 实现中分离；ROS2 专用代码集中于 services/ros2/。
+`package/msg/Type`，ROS1 两段式类型只在输入边界转换。ROS1 适配器已实现，
+Gateway 和公共应用层不依赖具体 ROS 版本；专用代码分别集中于 services/ros1/、services/ros2/。
 
 ## 已实现并在当前代码中保留的能力
 
@@ -149,12 +149,13 @@ Gateway 和公共应用层已从 ROS2 实现中分离；ROS2 专用代码集中�
   视频约 12 fps、限额与 FFmpeg 清理正常，混合场景点云吞吐较低；当时发现的断订阅竞态
   已在 2026-09-15 修复并补充回归。
   详见 [RTSP 混合测试报告](docs/ros2-rtsp-benchmark.md)；不代表真实摄像头或浏览器验证。
-- ROS1 暂未实现；消息名称统一不等于跨版本消息结构转换已经实现。
+- ROS1 已实现消息转换、原生收发、图查询、latched/static TF 保留及版本路由；
+  本机原生集成和原始 bag 加速回放通过，目标部署验收见 [ROS1 测试指南](docs/ros1-testing.md)。
 
 ### ROS2 发行版与工作空间差异
 
 `.env.example` 默认加载 ROS2 Humble。其他发行版或工作空间应通过
-`ROS2_SETUP_PATHS` 配置，无需修改启动脚本。
+`ROS_SETUP_PATHS` 配置，无需修改启动脚本。
 
 ### TF 时间语义仍有边界
 
@@ -197,13 +198,12 @@ uv run python -m compileall -q app
 
 ## 优先级建议
 
-### P1：ROS1 适配（已制定方案，未实施）
+### P1：ROS1 部署验收（核心适配已实现）
 
-- 按 [ROS1 适配方案](docs/ros1-adaptation-plan.md) 分阶段推进，先验证 Noetic 与
-  当前 Python 依赖的运行边界，再实现适配器；不能仅更换 setup 路径宣称支持 ROS1。
-- 不新增用户配置的 `ROS_VERSION`；计划统一为 `ROS_SETUP_PATHS`，由加载环境选择实例版本。
-- 计划增加 `/ws/ros1`、`/ws/ros2` 及默认入口，并同步 HTTP API 的后端选择，错版本明确拒绝。
-- 本轮仅记录方案；`.env`、代码、代理和 Docker 尚未更改。
+- 已实现适配器与环境、WS/HTTP 版本选择，`.env` 统一使用 `ROS_SETUP_PATHS`。
+- 原生 ROS1 集成、原始 bag 120 帧加速输入及 ROS2 点云回归已通过。
+- 已提供 Ubuntu 22.04 ROS1 容器方案；Docker 构建、局域网互通和长时间稳定性尚未验证。
+- 按 [ROS1 测试指南](docs/ros1-testing.md) 验收；不要直接用 Noetic 的 Python 3.8 创建本项目后端环境。
 
 ### P1：测试与稳定性
 
@@ -259,5 +259,5 @@ uv run python -m compileall -q app
 - 核心 3D 显示：可用，TF 已支持有限历史与插值，外推语义仍有限；截图可用，录像采用浏览器原生 WebM。
 - `.rvizweb` 配置管理：已实现，存储与前端变更状态已有单元测试，组件和端到端覆盖仍不足。
 - Docker 部署：构建链路已重写，DDS 网络尚未做目标设备集成验证。
-- 自动化测试：当前前端 18 个测试文件、后端 99 项通过，组件、端到端与 ROS2
+- 自动化测试：当前前端 18 个测试文件、后端 115 项通过，组件、端到端与 ROS2
   集成覆盖仍不足。

@@ -2,7 +2,7 @@
 
 ## 项目定位
 
-RVizWeb 是一个面向 ROS2 的浏览器可视化工具。前端使用 Vue 3、Three.js 和 Element Plus，后端使用 FastAPI 与 rclpy。浏览器通过 FastAPI 的 `/ws` WebSocket 与后端通信，后端直接加入 ROS2 图，不依赖独立的 rosbridge_server。
+RVizWeb 是一个面向 ROS 的浏览器可视化工具。前端使用 Vue 3、Three.js 和 Element Plus，后端使用 FastAPI，通过 rclpy 或 rospy 接入 ROS2 / ROS1。每个实例只运行一种 ROS 环境，不依赖独立的 rosbridge_server。
 
 当前工程以本地开发运行方式为主。用户操作说明与界面功能介绍见 `README.md`，本文档重点说明工程结构、配置、启动和维护方式。
 
@@ -46,31 +46,30 @@ HTTP API ─────→ RosApplication（权限、客户端所有权、消�
   与 WebSocket 长期 owner 共享底层 publisher。未传 type 时只从当前会话推断。
 - 关闭顺序为结束 Gateway 会话、释放 ROS 资源、删除连接元数据、停止 ROS 节点。
 - 类型名称统一为 `package/msg/Type`；两段式名称仅在边界规范化。
-  名称规范化不代表 ROS1/ROS2 消息结构相同；未来适配器仍须处理时间、
+  名称规范化不代表 ROS1/ROS2 消息结构相同；各适配器负责处理时间、
   Header、嵌套消息及保留消息语义。
-- 当前保持单数据源 `/ws`，ROS1 尚未实现。已制定
-  [ROS1 适配方案](docs/ros1-adaptation-plan.md)：单实例单版本、setup 环境选择，
-  计划支持 `/ws/ros1`、`/ws/ros2` 与默认 `/ws`，同时保证 HTTP 查询同源选择。
-  这些入口与 `ROS_SETUP_PATHS` 更名尚未实现；下文运行配置仍描述当前代码。
+- 单实例单版本，由 `ROS_SETUP_PATHS` 加载的环境选择；不在 `.env` 设置 `ROS_VERSION`。
+  `/ws/ros1`、`/ws/ros2` 检查运行版本，`/ws` 使用当前实例；HTTP API 跟随连接选择。
+  详见 [ROS1 测试指南](docs/ros1-testing.md)。
 - 测试使用假适配器覆盖共享订阅、会话发布、关闭清理，并在子进程中禁止 ROS
   导入以验证公共层边界；ROS2 实际收发另做隔离 Domain 验证。
 
 ## 环境要求
 
-- ROS2 环境，当前启动脚本默认尝试加载 ROS2 Humble。
+- ROS2 或与后端 Python 兼容的 ROS1 环境；示例配置使用 ROS2 Humble。
 - Python 3.10–3.12。
 - Node.js 20.19 或更高版本（Vite 8 要求）。
 - npm、curl、`ss`、`setsid`。
 - uv；如果系统中没有，`start.sh` 会通过 uv 官方安装脚本安装。
 
-启动脚本会按 `.env` 中的 `ROS2_SETUP_PATHS` 顺序加载，例如：
+启动脚本会按 `.env` 中的 `ROS_SETUP_PATHS` 顺序加载，例如：
 
 ```text
 /opt/ros/humble/setup.bash
 <your_workspace>/install/setup.bash
 ```
 
-如果实际工作空间位于其他位置，需要修改 `start.sh` 的 `load_ros` 函数，或在启动脚本前自行加载正确的 ROS2 环境。
+其他工作空间直接追加到 `ROS_SETUP_PATHS`，不需要修改启动脚本；不能混合 ROS1 / ROS2 环境。
 
 ## 环境配置
 
@@ -126,7 +125,7 @@ ROS 话题名不应放在 `.env` 中。Displays、Fixed Frame、odom 话题、�
 ./start.sh dev
 ```
 
-脚本会读取 `.env`、加载 ROS2 环境、检查端口和依赖、启动两个进程并等待健康检查。
+脚本会读取 `.env`、加载所选 ROS 环境、检查端口和依赖、启动两个进程并等待健康检查。
 `LOG_ENABLED=false` 时输出只显示在终端，不创建日志。设为 `true` 后，每次启动会在
 `logs/YYYYMMDD-HHMMSS/` 下分别创建 `start.log`、`backend.log` 和 `frontend.log`。同一秒重复启动时目录名自动增加序号，不覆盖历史日志。
 
@@ -151,7 +150,7 @@ RVIZWEB_CONFIG=default.rvizweb ./start.sh local
 
 Vite 会将 `/api` 和 `/ws` 请求代理到本地后端，因此日常使用通常只需访问前端地址。
 
-前端代理会从 `ROS_WS_URL` 解析内部后端端口；该变量留空时使用默认端口 `8000`。正常模式和开发模式使用相同的 `/api`、`/ws` 后端目标。
+本地代理固定连接内部后端 `8000` 端口。`ROS_WS_URL` 留空使用同源 `/ws`；指定远端版本入口时，浏览器的 HTTP API 同时指向该远端对应版本。URL 不改变本地后端运行版本或端口。
 
 ## 核心功能与消息类型
 
@@ -302,7 +301,7 @@ echo "${ROS_LOCALHOST_ONLY:-0}"
 ### 端口已被占用
 
 修改 `.env` 中的 `APP_PORT`；代理目标、CORS 和浏览器连接地址会自动更新。
-如果占用的是内部端口，修改 `ROS_WS_URL` 中的端口，不需要修改源码。
+如果占用的是内部 `8000` 端口，请先停止冲突服务；`ROS_WS_URL` 不是本地后端端口配置。
 
 ### 配置未按预期恢复
 

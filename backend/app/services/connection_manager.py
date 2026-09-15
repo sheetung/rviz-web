@@ -243,7 +243,8 @@ class ConnectionManager:
             if isinstance(error, asyncio.TimeoutError):
                 logger.warning(
                     "Closing slow WebSocket client %s: send timed out after %.1fs",
-                    client_id, self.send_timeout,
+                    client_id,
+                    self.send_timeout,
                 )
             else:
                 logger.error("Failed to send message to %s: %s", client_id, error)
@@ -310,6 +311,14 @@ class ConnectionManager:
 
     async def send_to_client(self, client_id: str, message: dict) -> bool:
         """发送消息给指定客户端"""
+        if _pointcloud_binary_data(message) is not None:
+            latest = self._latest_topic_messages.get(client_id)
+            event = self._sender_events.get(client_id)
+            if latest is None or event is None:
+                return False
+            latest[message["topic"]] = message
+            event.set()
+            return True
         message_text = _serialize_json_message(message)
         return await self._send_text_to_client(client_id, message_text)
 

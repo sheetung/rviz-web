@@ -8,7 +8,7 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -51,7 +51,7 @@ async def lifespan(_app: FastAPI):
 # 创建 FastAPI 应用
 app = FastAPI(
     title="RViz Web Visualization",
-    description="基于 Vue.js + FastAPI 的 ROS2 可视化平台",
+    description="基于 Vue.js + FastAPI 的 ROS 可视化平台",
     version=BACKEND_VERSION,
     docs_url=None,
     redoc_url=None,
@@ -121,6 +121,29 @@ app.include_router(configs.router, prefix="/api/v1", tags=["Configs"])
 app.include_router(video.router, prefix="/api/v1", tags=["Video"])
 
 
+async def require_middleware(request: Request):
+    expected = request.url.path.split("/")[1]
+    actual = get_ros_service().middleware
+    if expected != actual:
+        raise HTTPException(
+            409,
+            detail={
+                "code": "middleware_mismatch",
+                "expected": expected,
+                "actual": actual,
+            },
+        )
+
+
+for middleware in ("ros1", "ros2"):
+    for router in (ros.router, configs.router, video.router):
+        app.include_router(
+            router,
+            prefix=f"/{middleware}/api/v1",
+            dependencies=[Depends(require_middleware)],
+        )
+
+
 @app.get("/")
 async def root():
     """根路径"""
@@ -130,10 +153,25 @@ async def root():
 @app.get("/health")
 async def health_check():
     """健康检查"""
+    service = get_ros_service()
+    if service.middleware == "ros1":
+        try:
+            await service.get_topic_types()
+        except Exception:
+            return JSONResponse(
+                {
+                    "status": "not_ready",
+                    "middleware": "ros1",
+                    "reason": "ROS Master unavailable",
+                },
+                status_code=503,
+            )
     return {
         "status": "healthy",
         "service": "ros-web-viz",
         "version": BACKEND_VERSION,
+        "middleware": service.middleware,
+        "protocol_version": 1,
     }
 
 
@@ -142,14 +180,40 @@ async def version_info():
     """返回后端版本。"""
     return {
         "version": BACKEND_VERSION,
+        "middleware": get_ros_service().middleware,
+        "protocol_version": 1,
+    }
+
+
+@app.get("/ros1/api/v1/version", dependencies=[Depends(require_middleware)])
+@app.get("/ros2/api/v1/version", dependencies=[Depends(require_middleware)])
+async def middleware_version_info():
+    return {
+        "version": BACKEND_VERSION,
+        "middleware": get_ros_service().middleware,
+        "protocol_version": 1,
     }
 
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+@app.websocket("/ws/{middleware}")
+async def websocket_endpoint(websocket: WebSocket, middleware: str = ""):
     """WebSocket 端点 - Rosbridge 协议"""
     if not origin_is_allowed(websocket.headers.get("origin"), settings):
         await websocket.close(code=4403, reason="Origin not allowed")
+        return
+    actual = get_ros_service().middleware
+    if middleware and middleware != actual:
+        await websocket.accept()
+        await websocket.send_json(
+            {
+                "op": "error",
+                "code": "middleware_mismatch",
+                "error": "Requested ROS version is unavailable",
+                "actual": actual,
+            }
+        )
+        await websocket.close(code=1008, reason="middleware_mismatch")
         return
     gateway = get_ros_gateway()
     await gateway.handle_websocket(websocket)

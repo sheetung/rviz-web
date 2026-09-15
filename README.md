@@ -85,6 +85,8 @@ RVizWeb 是面向 ROS 的 Web 可视化工具，适用于机器人调试、无�
 
 ## 快速开始
 
+ROS1 已提供独立适配器与部署配置，参见 [ROS1 部署与测试](docs/ros1-testing.md)。下面的默认示例使用 ROS2 Humble。每个后端实例只运行一种 ROS 环境，通过 `ROS_SETUP_PATHS` 选择；浏览器可用 `/ws/ros1` 或 `/ws/ros2` 选择对应后端。
+
 ### 方式一：本地运行
 
 准备可用的 ROS 2 环境，以及以下依赖：
@@ -106,13 +108,13 @@ cp .env.example .env
 编辑 `.env`，设置 ROS 2 环境路径和与机器人一致的通信域：
 
 ```dotenv
-ROS2_SETUP_PATHS="/opt/ros/humble/setup.bash"
+ROS_SETUP_PATHS="/opt/ros/humble/setup.bash"
 ROS_DOMAIN_ID=0
 APP_HOST=127.0.0.1
 APP_PORT=3000
 ```
 
-如果使用自定义消息，将工作空间的 `install/setup.bash` 追加到 `ROS2_SETUP_PATHS`，多个路径以空格分隔。需要局域网访问时，将 `APP_HOST` 改为 `0.0.0.0`。
+如果使用自定义消息，将工作空间的 `install/setup.bash` 追加到 `ROS_SETUP_PATHS`，多个路径以空格分隔。需要局域网访问时，将 `APP_HOST` 改为 `0.0.0.0`。
 
 ```bash
 # 首次安装或依赖变化后执行；系统依赖安装可能需要 sudo
@@ -163,7 +165,7 @@ RVIZWEB_CONFIG=default.rvizweb ./start.sh local
 
 ### 配置与排障
 
-- **话题不可见**：核对 `ROS_DOMAIN_ID` 和 `ROS2_SETUP_PATHS`，确认后端加载了正确的工作空间。
+- **话题不可见**：核对 `ROS_DOMAIN_ID` 和 `ROS_SETUP_PATHS`，确认后端加载了正确的工作空间。
 - **显示位置异常或没有对象**：检查 Fixed Frame 和 TF 链，并查看对应 Display 的状态信息。
 - **RTSP 无法连接**：确认后端可运行 FFmpeg 并访问视频源。默认策略禁止私网等地址，受信任相机的访问策略需由维护者在 `backend/app/core/config.py` 中调整并重新部署。
 - **更多说明**：参阅[完整使用指南](./docs/usage.md)，包含话题发现、配置字段、视频接口、日志、分离部署和常见问题。

@@ -58,7 +58,7 @@ class ConnectionInfo(BaseModel):
 class SystemStatus(BaseModel):
     """系统状态"""
 
-    ros_domain_id: int = Field(..., description="ROS2 Domain ID")
+    ros_domain_id: Optional[int] = Field(None, description="ROS2 Domain ID; ROS1 为 null")
     active_nodes: int = Field(..., description="活跃节点数")
     active_topics: int = Field(..., description="活跃主题数")
     active_connections: int = Field(..., description="活跃连接数")

@@ -6,6 +6,7 @@
 from typing import Optional
 
 from ..core.config import get_settings
+from ..core.ros_runtime import selected_middleware
 from .connection_manager import ConnectionManager
 from .ros_gateway import RosGateway
 from .ros_contract import RosService
@@ -30,10 +31,13 @@ def get_ros_service() -> RosService:
     global _ros_service
     if _ros_service is None:
         settings = get_settings()
-        from .ros2.adapter import Ros2Adapter
+        if selected_middleware() == "ros1":
+            from .ros1.adapter import Ros1Adapter as Adapter
+        else:
+            from .ros2.adapter import Ros2Adapter as Adapter
 
         _ros_service = RosApplication(
-            settings, Ros2Adapter(settings), _create_connection_manager(settings)
+            settings, Adapter(settings), _create_connection_manager(settings)
         )
     return _ros_service
 

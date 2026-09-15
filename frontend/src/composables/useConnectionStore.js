@@ -105,7 +105,7 @@ export const useConnectionStore = defineStore('connection', () => {
           requestSubscription(topic, messageType)
         })
         debugLog('WebSocket connected')
-        systemMessage.success('已连接到 ROS2 服务')
+        systemMessage.success('已连接到 ROS 服务')
       }
       
       socket.onmessage = (event) => {
@@ -129,6 +129,13 @@ export const useConnectionStore = defineStore('connection', () => {
         advertisedTopics.value.clear()
         stopLatencyTracking()
         clearPendingRequests()
+        if (event.code === 1008 && event.reason === 'middleware_mismatch') {
+          intentionalDisconnect = true
+          connectionError.value = '所选 ROS 版本与后端不匹配，请检查 ROS_WS_URL'
+          if (reconnectTimer) clearTimeout(reconnectTimer)
+          reconnectTimer = null
+          return
+        }
         
         if (!intentionalDisconnect) {
           // 只要不是用户主动断开，就持续定时重连。服务端重启时也可能
@@ -232,6 +239,13 @@ export const useConnectionStore = defineStore('connection', () => {
 
     // 根据操作类型处理消息
     switch (op) {
+      case 'connection_info':
+        if (message.protocol_version !== 1) {
+          connectionError.value = '后端协议版本不兼容'
+          intentionalDisconnect = true
+          websocket.value?.close(1008, 'protocol_mismatch')
+        }
+        break
       case 'publish':
         debugLog(`[ConnectionStore] 📢 发布消息到主题: ${topic}`)
         handleTopicMessage(topic, message.msg)

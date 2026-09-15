@@ -12,11 +12,10 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '..', '')
   const appPort = Number(env.APP_PORT || 3000)
   const rosWebSocketUrl = env.ROS_WS_URL || ''
-  const configuredWebSocket = rosWebSocketUrl ? new URL(rosWebSocketUrl) : null
-  const backendPort = configuredWebSocket
-    ? configuredWebSocket.port || (configuredWebSocket.protocol === 'wss:' ? '443' : '80')
-    : '8000'
+  const backendPort = '8000'
   const backendProxy = {
+    '/ros1/api': { target: `http://127.0.0.1:${backendPort}`, changeOrigin: true },
+    '/ros2/api': { target: `http://127.0.0.1:${backendPort}`, changeOrigin: true },
     '/api': {
       target: `http://127.0.0.1:${backendPort}`,
       changeOrigin: true,

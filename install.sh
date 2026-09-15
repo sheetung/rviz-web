@@ -37,6 +37,7 @@ load_env() {
     [[ -z "$line" || "$line" == \#* ]] && continue
     [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || fail "Invalid .env entry: $line"
     key="${line%%=*}"
+    [[ "$key" != ROS_VERSION ]] || fail "ROS_VERSION must come from ROS setup, not .env"
     value="${line#*=}"
     value="${value#"${value%%[![:space:]]*}"}"
     value="${value%"${value##*[![:space:]]}"}"
@@ -51,12 +52,8 @@ load_env() {
 }
 
 load_ros() {
-  set +u
-  local setup_file
-  for setup_file in ${ROS2_SETUP_PATHS:-}; do
-    [[ -f "$setup_file" ]] && source "$setup_file"
-  done
-  set -u
+  source "$PROJECT_ROOT/scripts/ros-environment.sh"
+  load_ros_environment || fail "Invalid ROS environment"
 }
 
 ensure_uv() {

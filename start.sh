@@ -38,6 +38,7 @@ load_env() {
     [[ -z "$line" || "$line" == \#* ]] && continue
     [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || fail "Invalid .env entry: $line"
     key="${line%%=*}"
+    [[ "$key" != ROS_VERSION ]] || fail "ROS_VERSION must come from ROS setup, not .env"
     value="${line#*=}"
     value="${value#"${value%%[![:space:]]*}"}"
     value="${value%"${value##*[![:space:]]}"}"
@@ -53,12 +54,8 @@ load_env() {
 }
 
 load_ros() {
-  set +u
-  local setup_file
-  for setup_file in ${ROS2_SETUP_PATHS:-}; do
-    [[ -f "$setup_file" ]] && source "$setup_file"
-  done
-  set -u
+  source "$PROJECT_ROOT/scripts/ros-environment.sh"
+  load_ros_environment || fail "Invalid ROS environment"
 }
 
 configure_logging() {
@@ -181,16 +178,6 @@ validate_port() {
   (( port >= 1 && port <= 65535 )) || fail "$name must be between 1 and 65535: $port"
 }
 
-backend_port_from_ws_url() {
-  local url="${1:-}"
-  [[ -n "$url" ]] || { printf '8000'; return; }
-  node -e '
-    const url = new URL(process.argv[1]);
-    if (url.protocol !== "ws:" && url.protocol !== "wss:") process.exit(1);
-    process.stdout.write(url.port || (url.protocol === "wss:" ? "443" : "80"));
-  ' "$url"
-}
-
 wait_for_http() {
   local url="$1" name="$2" pid="$3" timeout_seconds="${4:-60}"
   local max_attempts=$(( timeout_seconds * 5 ))
@@ -292,9 +279,8 @@ start_local() {
   local app_host="${APP_HOST:-127.0.0.1}"
   local app_port="${APP_PORT:-3000}"
   local backend_port
-  backend_port="$(backend_port_from_ws_url "${ROS_WS_URL:-}")" || fail "Invalid ROS_WS_URL: ${ROS_WS_URL:-}"
+  backend_port=8000
   local backend_host_default="127.0.0.1"
-  [[ -n "${ROS_WS_URL:-}" ]] && backend_host_default="0.0.0.0"
   local backend_host="$backend_host_default"
   local backend_health_host
   local frontend_health_host
@@ -303,14 +289,16 @@ start_local() {
   frontend_health_host="$(health_host_for_bind "$app_host")"
   export CORS_ORIGINS="${CORS_ORIGINS:-$(default_cors_origins "$app_host" "$app_port")}"
   validate_port APP_PORT "$app_port"
-  validate_port ROS_WS_URL_PORT "$backend_port"
-  [[ "$app_port" != "$backend_port" ]] || fail "APP_PORT and the ROS_WS_URL port must be different"
+  [[ "$app_port" != "$backend_port" ]] || fail "APP_PORT must differ from the internal backend port 8000"
   check_port "$backend_port"
   check_port "$app_port"
 
   [[ "$default_rvizweb_config" == *.rvizweb ]] || fail "Default frontend config must use the .rvizweb suffix"
   [[ -f "$PROJECT_ROOT/rvizweb_configs/$default_rvizweb_config" ]] || fail "Default frontend config not found: rvizweb_configs/$default_rvizweb_config"
-  "$BACKEND_DIR/.venv/bin/python" -c "import rclpy" || fail "rclpy is unavailable; check the ROS2 setup files"
+  local ros_module=rclpy
+  [[ "$ROS_VERSION" != 1 ]] || ros_module=rospy
+  "$BACKEND_DIR/.venv/bin/python" -c "import $ros_module" \
+    || fail "$ros_module is unavailable in the backend Python; check ROS_SETUP_PATHS and Python compatibility"
 
   if [[ "$frontend_mode" == "local" ]]; then
     log "Building frontend for normal local use"

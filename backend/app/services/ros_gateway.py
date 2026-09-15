@@ -64,6 +64,20 @@ class RosGateway:
             return
 
         try:
+            await self.connection_manager.send_to_client(
+                client_id,
+                {
+                    "op": "connection_info",
+                    "middleware": self.service.middleware,
+                    "protocol_version": 1,
+                    "capabilities": {
+                        "observed_frequency": True,
+                        "service_calls": False,
+                        "parameter_writes": False,
+                        "actions": False,
+                    },
+                },
+            )
             while True:
                 data = await websocket.receive_text()
                 request_now = time.monotonic()

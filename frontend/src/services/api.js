@@ -11,7 +11,8 @@ const browserLocation = typeof window === 'undefined' ? null : window.location
 const api = axios.create({
   baseURL: createApiBaseUrl(
     browserLocation,
-    import.meta.env.VITE_BACKEND_PUBLIC_URL
+    import.meta.env.VITE_BACKEND_PUBLIC_URL,
+    import.meta.env.ROS_WS_URL
   ),
   timeout: 10000,
   headers: {

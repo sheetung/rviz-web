@@ -65,6 +65,12 @@ class RosApplication:
             if not await self.adapter.subscribe_topic(topic, message_type):
                 return False
             info.subscribed_topics.append(topic)
+            retained = getattr(self.adapter, "get_retained_messages", None)
+            if retained:
+                for payload in retained(topic):
+                    await self.connection_manager.send_to_client(
+                        client_id, {"op": "publish", "topic": topic, "msg": payload}
+                    )
             return True
 
     async def unsubscribe_client(self, client_id, topic):
@@ -161,7 +167,7 @@ class RosApplication:
             cpu_temperature = self._get_cpu_temperature()
 
         return SystemStatus(
-            ros_domain_id=self.settings.ros_domain_id,
+            ros_domain_id=self.settings.ros_domain_id if self.middleware == 'ros2' else None,
             active_nodes=len(nodes),
             active_topics=len(topics),
             active_connections=len(self.connection_manager.active_connections),

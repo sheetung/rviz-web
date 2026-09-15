@@ -97,8 +97,10 @@ async def test_gateway_invalid_json_then_ping_and_disconnect(settings):
     app.connection_manager.send_to_client = AsyncMock()
     await gateway.handle_websocket(socket)
     replies = app.connection_manager.send_to_client.await_args_list
-    assert replies[0].args[1]["op"] == "error"
-    assert replies[1].args[1] == {"op": "pong", "id": "p"}
+    assert replies[0].args[1]["op"] == "connection_info"
+    assert replies[0].args[1]["protocol_version"] == 1
+    assert replies[1].args[1]["op"] == "error"
+    assert replies[2].args[1] == {"op": "pong", "id": "p"}
     assert "a" not in app.connection_manager.connection_info
 
 
