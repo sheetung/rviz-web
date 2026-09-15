@@ -288,4 +288,7 @@ export default {
     right: -8px;
   }
 }
+@media (pointer: coarse) {
+  .status-popover-panel { max-height: calc(100dvh - var(--header-h) - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); overflow-y: auto; overscroll-behavior: contain; }
+}
 </style>

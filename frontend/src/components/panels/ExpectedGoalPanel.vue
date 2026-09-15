@@ -8,7 +8,7 @@
           size="small"
           :step="0.1"
           :precision="2"
-          controls-position="right"
+          inputmode="decimal"
           @update:model-value="value => updateCoordinate('x', value)"
         />
       </label>
@@ -19,7 +19,7 @@
           size="small"
           :step="0.1"
           :precision="2"
-          controls-position="right"
+          inputmode="decimal"
           @update:model-value="value => updateCoordinate('y', value)"
         />
       </label>
@@ -30,7 +30,7 @@
           size="small"
           :step="0.1"
           :precision="2"
-          controls-position="right"
+          inputmode="decimal"
           @update:model-value="value => updateCoordinate('z', value)"
         />
       </label>
@@ -217,4 +217,10 @@ export default {
 :deep(.el-input__inner) {
   color: var(--text-primary) !important;
 }
+.expected-goal-panel { padding: 4px; gap: 8px; background: transparent; }
+.goal-meta { padding: 6px; background: transparent; }
+.goal-grid { grid-template-columns: minmax(0, 1fr); }
+.goal-grid label { grid-template-columns: 24px minmax(0, 1fr); align-items: center; font-size: 12px; }
+:deep(.el-input-number__increase), :deep(.el-input-number__decrease) { width: 32px; height: 32px; }
+:deep(.el-input-number .el-input__wrapper) { padding-inline: 36px; }
 </style>

@@ -4,14 +4,88 @@
   "config": {
     "fixedFrame": "map",
     "followFrame": "",
-    "scene": { "showGrid": true, "showAxes": true, "viewPreset": "iso", "camera": { "position": { "x": 0, "y": -14, "z": 10 }, "target": { "x": 0, "y": 0, "z": 0 }, "up": { "x": 0, "y": 0, "z": 1 }, "zoom": 1 } },
-    "layout": { "sceneWidth": 68, "panelHeights": {}, "collapsedPanels": { "settings": true } },
-    "appearance": { "theme": "dark" },
-    "video": { "sourceUrl": "", "visible": false, "layout": { "x": null, "y": null, "width": 360, "height": 240 } },
-    "goal": { "topic": "/goal_pose", "x": 0, "y": 0, "z": 0 },
-    "position": { "odomTopic": "", "showRobotModel": false, "showTrajectory": true, "trajectoryLength": 100 },
-    "laser": { "laserType": "3d", "laserScanTopic": "", "pointCloudTopic": "", "showLaserPoints": true, "showLaserLines": true, "showIntensity": false, "laserPointSize": 0.15, "pointSize": 0.03, "pointOpacity": 0.8 },
-    "map": { "mapTopic": "", "showMap": true, "showMapGrid": false, "showMapOrigin": true, "mapOpacity": 0.8 },
-    "displays": []
+    "scene": {
+      "showGrid": true,
+      "showAxes": true,
+      "viewPreset": "iso",
+      "camera": {
+        "position": {
+          "x": 0.0,
+          "y": -13.999999999998387,
+          "z": 9.999999999998826
+        },
+        "target": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 0.0
+        },
+        "up": {
+          "x": 0.0,
+          "y": 0.0,
+          "z": 1.0
+        },
+        "zoom": 1.0,
+        "projection": "perspective"
+      }
+    },
+    "displays": [],
+    "layout": {
+      "sceneWidth": 68.0,
+      "panelHeights": {
+        "gps": 220.0,
+        "goal": 220.0,
+        "topics": 560.0,
+        "settings": 360.0,
+        "chart": 300.0
+      },
+      "collapsedPanels": {
+        "settings": false,
+        "chart": true
+      }
+    },
+    "appearance": {
+      "theme": "dark"
+    },
+    "video": {
+      "sourceUrl": "",
+      "visible": false,
+      "layout": {
+        "x": null,
+        "y": null,
+        "width": 360.0,
+        "height": 240.0
+      }
+    },
+    "goal": {
+      "topic": "/goal_pose",
+      "x": 0.0,
+      "y": 0.0,
+      "z": 0.0
+    },
+    "position": {
+      "odomTopic": "",
+      "showRobotModel": false,
+      "showTrajectory": true,
+      "trajectoryLength": 100
+    },
+    "laser": {
+      "laserType": "3d",
+      "laserScanTopic": "",
+      "pointCloudTopic": "",
+      "showLaserPoints": true,
+      "showLaserLines": true,
+      "showIntensity": false,
+      "laserPointSize": 0.15,
+      "pointSize": 0.03,
+      "pointOpacity": 0.8
+    },
+    "map": {
+      "mapTopic": "",
+      "showMap": true,
+      "showMapGrid": false,
+      "showMapOrigin": true,
+      "mapOpacity": 0.8
+    },
+    "extensions": {}
   }
 }

@@ -1,5 +1,5 @@
 <template>
-  <div id="app">
+  <div class="app-shell">
     <div class="app-header">
       <div class="header-left">
         <div class="app-logo">
@@ -277,9 +277,11 @@ body {
   overflow: auto;
 }
 
-#app {
+.app-shell {
   height: 100vh;
+  height: 100dvh;
   background: var(--bg-app);
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   position: relative;
 }
 
@@ -365,6 +367,7 @@ body {
 
 .app-content {
   height: calc(100vh - var(--header-h));
+  height: calc(100dvh - var(--header-h) - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   position: relative;
   z-index: 2;
   overflow: auto;
@@ -466,5 +469,89 @@ body {
 .el-dropdown-menu__item:not(.is-disabled):hover {
   background: var(--bg-hover) !important;
   color: var(--accent) !important;
+}
+
+/* Shared control scale for desktop and tablet. */
+:root {
+  --panel-header-h: 32px;
+}
+
+button,
+[role="button"] {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.el-button {
+  min-height: 34px;
+  min-width: 34px;
+  font-size: 13px;
+}
+
+.el-input__wrapper,
+.el-select__wrapper {
+  min-height: 34px !important;
+}
+
+.el-input__inner,
+.el-textarea__inner {
+  font-size: 14px !important;
+}
+
+.el-input-number {
+  min-height: 34px;
+}
+
+.app-shell .el-input-number__increase,
+.app-shell .el-input-number__decrease {
+  width: 28px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  border-color: var(--border);
+}
+
+.app-shell .el-input-number__increase:hover,
+.app-shell .el-input-number__decrease:hover {
+  background: var(--bg-hover);
+  color: var(--accent);
+}
+
+.el-checkbox {
+  min-height: 32px;
+}
+
+.el-select-dropdown__item,
+.el-dropdown-menu__item {
+  min-height: 36px;
+  line-height: 36px;
+}
+
+.el-slider__button {
+  width: 18px;
+  height: 18px;
+}
+
+.el-dialog {
+  max-width: calc(100vw - 24px);
+}
+
+.el-popover.el-popper {
+  max-width: calc(100vw - 24px);
+  box-sizing: border-box;
+}
+
+.app-header {
+  padding-inline: 12px;
+}
+
+.app-subtitle {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .el-input__inner,
+  .el-textarea__inner {
+    font-size: 16px !important;
+  }
+
 }
 </style>

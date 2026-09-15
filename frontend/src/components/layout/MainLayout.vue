@@ -1,6 +1,6 @@
 <template>
   <div class="main-layout">
-    <div class="main-content" :class="{ 'sidebar-collapsed': sidebarCollapsed }" :style="{ gridTemplateColumns: sidebarCollapsed ? 'minmax(0, 1fr) 16px' : `minmax(0, ${sceneWidth}fr) 16px minmax(320px, ${100 - sceneWidth}fr)` }">
+    <div class="main-content" :class="{ 'sidebar-collapsed': sidebarCollapsed, 'tools-expanded': showMoreTools }" :style="{ '--tablet-sidebar-width': `${tabletSidebarWidth}px`, '--drawer-height': drawerHeight === null ? 'min(40%, 420px)' : `${drawerHeight}px`, gridTemplateColumns: sidebarCollapsed ? 'minmax(0, 1fr) 16px' : `minmax(0, ${sceneWidth}fr) 16px minmax(320px, ${100 - sceneWidth}fr)` }">
       <section class="scene-section">
         <div class="scene-panel">
           <div class="scene-header">
@@ -9,11 +9,11 @@
               <div class="tool-group">
                 <el-button size="small" :type="activeSceneTool === 'move' ? 'primary' : 'default'" title="移动相机 (M)" @click="activateSceneTool('move')" class="tool-btn">
                   <el-icon :size="14"><VideoCamera /></el-icon>
-                  <kbd>M</kbd>
+                  <span class="tool-label">移动</span><kbd>M</kbd>
                 </el-button>
                 <el-button size="small" :type="activeSceneTool === '2d_goal' ? 'primary' : 'default'" title="2D 目标 (G)" @click="activateSceneTool('2d_goal')" class="tool-btn">
                   <el-icon :size="14"><Flag /></el-icon>
-                  <kbd>G</kbd>
+                  <span class="tool-label">目标</span><kbd>G</kbd>
                 </el-button>
               </div>
               <span class="tool-separator"></span>
@@ -46,94 +46,99 @@
                   <el-icon :size="14"><RefreshLeft /></el-icon>
                 </el-button>
               </div>
-              <span class="tool-separator"></span>
-              <div class="tool-group">
-                <el-button-group>
-                  <el-button size="small" class="tool-btn" title="截图并下载" @click="captureSceneScreenshot">
-                    <el-icon :size="14"><Camera /></el-icon>
-                  </el-button>
-                  <el-button
-                    size="small"
-                    class="tool-btn"
-                    :class="{ 'recording-active': isSceneRecording }"
-                    :type="isSceneRecording ? 'danger' : 'default'"
-                    :title="isSceneRecording ? '结束录像并下载' : '开始录像'"
-                    @click="toggleSceneRecording"
-                  >
-                    <el-icon :size="14">
-                      <VideoPause v-if="isSceneRecording" />
-                      <VideoCamera v-else />
-                    </el-icon>
-                  </el-button>
-                </el-button-group>
-              </div>
-              <span class="tool-separator"></span>
-              <div class="tool-group">
-                <el-popover
-                  v-model:visible="showRtspConnection"
-                  placement="bottom-end"
-                  :width="340"
-                  :hide-after="0"
-                  trigger="click"
-                  popper-class="rtsp-connection-popper"
-                >
-                  <template #reference>
+              <el-button class="more-tools-control more-tools-btn" :class="{ 'is-open': showMoreTools }" title="更多工具" aria-label="更多工具" :aria-expanded="showMoreTools" aria-controls="extra-scene-tools" @click="showMoreTools = !showMoreTools">
+                <el-icon :size="16"><MoreFilled /></el-icon>
+              </el-button>
+              <div id="extra-scene-tools" class="extra-scene-tools">
+                <span class="tool-separator"></span>
+                <div class="tool-group">
+                  <el-button-group>
+                    <el-button size="small" class="tool-btn" title="截图并下载" @click="captureSceneScreenshot">
+                      <el-icon :size="14"><Camera /></el-icon>
+                    </el-button>
                     <el-button
                       size="small"
-                      :type="showRtspVideo ? 'primary' : 'default'"
-                      :loading="rtspConnecting"
                       class="tool-btn"
-                      title="RTSP 视频连接"
+                      :class="{ 'recording-active': isSceneRecording }"
+                      :type="isSceneRecording ? 'danger' : 'default'"
+                      :title="isSceneRecording ? '结束录像并下载' : '开始录像'"
+                      @click="toggleSceneRecording"
                     >
-                      <el-icon :size="14"><Monitor /></el-icon>
-                      <el-icon class="dropdown-caret" :class="{ open: showRtspConnection }"><ArrowDown /></el-icon>
+                      <el-icon :size="14">
+                        <VideoPause v-if="isSceneRecording" />
+                        <VideoCamera v-else />
+                      </el-icon>
                     </el-button>
-                  </template>
-
-                  <div class="rtsp-connection-panel">
-                    <div class="rtsp-connection-header">
-                      <div>
-                        <strong>RTSP 视频连接</strong>
-                        <small>{{ showRtspVideo ? '视频流已连接' : '输入网络流地址后连接' }}</small>
-                      </div>
-                      <span class="rtsp-status-dot" :class="{ connected: showRtspVideo, connecting: rtspConnecting }"></span>
-                    </div>
-
-                    <label for="rtsp-toolbar-source">网络流地址</label>
-                    <el-input
-                      id="rtsp-toolbar-source"
-                      v-model="rtspInputUrl"
-                      size="small"
-                      placeholder="rtsp://127.0.0.1:8554/1"
-                      clearable
-                      @keyup.enter="connectRtspVideo()"
-                    />
-                    <small class="rtsp-config-note">连接成功后，地址和视频窗口布局会随 .rvizweb 配置保存。</small>
-
-                    <div class="rtsp-connection-actions">
+                  </el-button-group>
+                </div>
+                <span class="tool-separator"></span>
+                <div class="tool-group">
+                  <el-popover
+                    v-model:visible="showRtspConnection"
+                    placement="bottom-end"
+                    :width="340"
+                    :hide-after="0"
+                    trigger="click"
+                    popper-class="rtsp-connection-popper"
+                  >
+                    <template #reference>
                       <el-button
                         size="small"
-                        type="primary"
+                        :type="showRtspVideo ? 'primary' : 'default'"
                         :loading="rtspConnecting"
-                        @click="connectRtspVideo()"
+                        class="tool-btn"
+                        title="RTSP 视频连接"
                       >
-                        {{ showRtspVideo ? '切换视频流' : '连接' }}
+                        <el-icon :size="14"><Monitor /></el-icon>
+                        <el-icon class="dropdown-caret" :class="{ open: showRtspConnection }"><ArrowDown /></el-icon>
                       </el-button>
-                      <el-button
-                        v-if="showRtspVideo"
+                    </template>
+
+                    <div class="rtsp-connection-panel">
+                      <div class="rtsp-connection-header">
+                        <div>
+                          <strong>RTSP 视频连接</strong>
+                          <small>{{ showRtspVideo ? '视频流已连接' : '输入网络流地址后连接' }}</small>
+                        </div>
+                        <span class="rtsp-status-dot" :class="{ connected: showRtspVideo, connecting: rtspConnecting }"></span>
+                      </div>
+
+                      <label for="rtsp-toolbar-source">网络流地址</label>
+                      <el-input
+                        id="rtsp-toolbar-source"
+                        v-model="rtspInputUrl"
                         size="small"
-                        type="danger"
-                        plain
-                        @click="disconnectRtspVideo()"
-                      >
-                        关闭视频
-                      </el-button>
+                        placeholder="rtsp://127.0.0.1:8554/1"
+                        clearable
+                        @keyup.enter="connectRtspVideo()"
+                      />
+                      <small class="rtsp-config-note">连接成功后，地址和视频窗口布局会随 .rvizweb 配置保存。</small>
+
+                      <div class="rtsp-connection-actions">
+                        <el-button
+                          size="small"
+                          type="primary"
+                          :loading="rtspConnecting"
+                          @click="connectRtspVideo()"
+                        >
+                          {{ showRtspVideo ? '切换视频流' : '连接' }}
+                        </el-button>
+                        <el-button
+                          v-if="showRtspVideo"
+                          size="small"
+                          type="danger"
+                          plain
+                          @click="disconnectRtspVideo()"
+                        >
+                          关闭视频
+                        </el-button>
+                      </div>
                     </div>
-                  </div>
-                </el-popover>
-                <el-button size="small" :type="showChartDock ? 'primary' : 'default'" @click="toggleChartDock" class="tool-btn" title="数据图表">
-                  <el-icon :size="14"><DataAnalysis /></el-icon>
-                </el-button>
+                  </el-popover>
+                  <el-button size="small" :type="showChartDock ? 'primary' : 'default'" @click="toggleChartDock" class="tool-btn" title="数据图表">
+                    <el-icon :size="14"><DataAnalysis /></el-icon>
+                  </el-button>
+                </div>
               </div>
             </div>
           </div>
@@ -176,7 +181,7 @@
             @lostpointercapture="cancelChartDockResize"
             @click="onChartDockClick"
           >
-            <span aria-hidden="true">
+            <span class="splitter-grip" aria-hidden="true">
               <svg class="splitter-chevron" viewBox="0 0 16 16" focusable="false">
                 <path :d="showChartDock ? 'M4 6 L8 10 L12 6' : 'M4 10 L8 6 L12 10'" />
               </svg>
@@ -197,8 +202,8 @@
       <button
         type="button"
         class="resize-handle"
-        :title="sidebarCollapsed ? '展开右侧功能栏' : '点击收起右侧功能栏，拖动调整宽度'"
-        :aria-label="sidebarCollapsed ? '展开右侧功能栏' : '收起右侧功能栏'"
+        :title="sidebarCollapsed ? '展开功能栏' : '点击收起功能栏，拖动调整大小'"
+        :aria-label="sidebarCollapsed ? '展开功能栏' : '收起功能栏'"
         :aria-expanded="!sidebarCollapsed"
         aria-controls="workbench-sidebar"
         @pointerdown="startSplitterResize"
@@ -208,7 +213,7 @@
         @lostpointercapture="cancelSplitterResize"
         @click="onSplitterClick"
       >
-        <span class="resize-line" aria-hidden="true">
+        <span class="resize-line splitter-grip" aria-hidden="true">
           <svg class="splitter-chevron" viewBox="0 0 16 16" focusable="false">
             <path :d="sidebarCollapsed ? 'M10 4 L6 8 L10 12' : 'M6 4 L10 8 L6 12'" />
           </svg>
@@ -216,7 +221,10 @@
       </button>
 
       <aside v-show="!sidebarCollapsed" id="workbench-sidebar" class="side-section">
-        <div class="side-panels-container">
+        <nav class="panel-navigation" aria-label="功能面板">
+          <button v-for="tab in panelTabs" :key="tab.id" type="button" :aria-pressed="activePanel === tab.id" @click="selectPanel(tab.id)">{{ tab.label }}</button>
+        </nav>
+        <div class="side-panels-container" :class="`active-panel-${activePanel}`">
           <div class="pose-goal-row">
           <div class="pose-goal-cell">
           <WorkbenchPanel
@@ -316,7 +324,7 @@
 <script>
 import { ref, nextTick, defineAsyncComponent, onBeforeUnmount } from 'vue'
 import {
-  ArrowDown, Refresh, RefreshLeft, View, VideoCamera, VideoPause, Camera, Flag, DataAnalysis, Grid, Connection, Monitor
+  MoreFilled, ArrowDown, Refresh, RefreshLeft, View, VideoCamera, VideoPause, Camera, Flag, DataAnalysis, Grid, Connection, Monitor
 } from '@element-plus/icons-vue'
 
 // 引入面板组件
@@ -354,6 +362,7 @@ const SIDE_PANEL_MIN_HEIGHTS = {
 export default {
   name: 'MainLayout',
   components: {
+    MoreFilled,
     ArrowDown,
     Refresh,
     RefreshLeft,
@@ -380,6 +389,13 @@ export default {
     const rtspVideoRef = ref(null)
     const topicConfigRef = ref(null)
     const activeSceneTool = ref('move')
+    const showMoreTools = ref(false)
+    const activePanel = ref('topics')
+    const panelTabs = [{ id: 'topics', label: '显示' }, { id: 'poseGoal', label: '位姿 / 目标' }, { id: 'settings', label: '设置' }]
+    const selectPanel = (id) => {
+      activePanel.value = id
+      if (id === 'settings') settingsCollapsed.value = false
+    }
     const showChartDock = ref(false)
     const showRtspVideo = ref(false)
     const showRtspConnection = ref(false)
@@ -395,8 +411,10 @@ export default {
     let configuredViewPreset = 'iso'
 
     // 传统布局控制状态
+    const tabletSidebarWidth = ref(320)
+    const drawerHeight = ref(null)
     const sceneWidth = ref(68)
-    const sidebarCollapsed = ref(false)
+    const sidebarCollapsed = ref(window.matchMedia('(max-width: 900px), (pointer: coarse) and (orientation: portrait)').matches)
     const sceneShowGrid = ref(true)
     const sceneShowAxes = ref(true)
     const availableFrameIds = ref([])
@@ -636,10 +654,22 @@ export default {
     }
     let splitterPointer = null
     let splitterContainerWidth = 1
+    let splitterContainerHeight = 1
+    let splitterStartSize = 0
+    let splitterStacked = false
+    let splitterCompact = false
     const splitterGesture = createSplitterGesture({
       onToggle: toggleSidebar,
       onResize: (deltaX) => {
-        if (sidebarCollapsed.value || window.matchMedia('(max-width: 1100px)').matches) return
+        if (sidebarCollapsed.value) return
+        if (splitterStacked) {
+          drawerHeight.value = Math.round(Math.max(140, Math.min(splitterContainerHeight * 0.65, splitterStartSize - deltaX)))
+          return
+        }
+        if (splitterCompact) {
+          tabletSidebarWidth.value = Math.round(Math.max(280, Math.min(460, splitterContainerWidth * 0.48, splitterStartSize - deltaX)))
+          return
+        }
         const width = Math.max(42, Math.min(78, startWidth.value + deltaX / splitterContainerWidth * 100))
         sceneWidth.value = width
         settingsSnapshot.value.layout.sceneWidth = Number(width.toFixed(2))
@@ -651,14 +681,24 @@ export default {
       splitterPointer = event.pointerId
       event.currentTarget.setPointerCapture(event.pointerId)
       startWidth.value = sceneWidth.value
-      splitterContainerWidth = Math.max(1, event.currentTarget.parentElement.clientWidth - 16)
-      splitterGesture.start(event.clientX, event.clientY)
+      const parent = event.currentTarget.parentElement
+      const sidebar = parent.querySelector('.side-section')
+      splitterStacked = window.matchMedia('(max-width: 900px), (pointer: coarse) and (orientation: portrait)').matches
+      splitterCompact = window.matchMedia('(max-width: 1100px), (pointer: coarse)').matches
+      splitterContainerWidth = Math.max(1, parent.clientWidth - (splitterCompact ? 20 : 16))
+      splitterContainerHeight = Math.max(1, parent.clientHeight)
+      splitterStartSize = splitterStacked ? sidebar.clientHeight : sidebar.clientWidth
+      splitterGesture.start(...splitterCoordinates(event))
       document.body.style.userSelect = 'none'
-      document.body.style.cursor = sidebarCollapsed.value ? 'pointer' : 'col-resize'
+      document.body.style.cursor = sidebarCollapsed.value ? 'pointer' : splitterStacked ? 'row-resize' : 'col-resize'
     }
 
+    const splitterCoordinates = (event) => splitterStacked
+      ? [event.clientY, event.clientX]
+      : [event.clientX, event.clientY]
+
     const handleSplitterMove = (event) => {
-      if (event.pointerId === splitterPointer) splitterGesture.move(event.clientX, event.clientY)
+      if (event.pointerId === splitterPointer) splitterGesture.move(...splitterCoordinates(event))
     }
 
     const cancelSplitterResize = () => {
@@ -671,7 +711,7 @@ export default {
 
     const stopSplitterResize = (event) => {
       if (event.pointerId !== splitterPointer) return
-      splitterGesture.end(event.clientX, event.clientY)
+      splitterGesture.end(...splitterCoordinates(event))
       cancelSplitterResize()
       nextTick(() => scene3dRef.value?.handleResize?.())
     }
@@ -1318,6 +1358,12 @@ export default {
 
     return {
       scene3dRef,
+      showMoreTools,
+      activePanel,
+      panelTabs,
+      selectPanel,
+      tabletSidebarWidth,
+      drawerHeight,
       rtspVideoRef,
       topicConfigRef,
       activeSceneTool,
@@ -1450,23 +1496,30 @@ export default {
   touch-action: none;
 }
 
-.chart-dock-resize-handle span {
+/* Both dividers share the same grip; only the orientation changes. */
+.splitter-grip {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 54px;
-  height: 14px;
+  width: var(--grip-width, 10px);
+  height: var(--grip-height, 48px);
   line-height: 1;
   overflow: hidden;
   border-radius: 999px;
-  background: var(--handle);
-  transition: width 0.16s ease, background-color 0.16s ease;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  transition: background-color 0.16s ease, color 0.16s ease;
 }
 
-.chart-dock-resize-handle:hover span,
-.chart-dock-resize-handle:active span {
-  width: 84px;
-  background: var(--handle-hover);
+.chart-dock-resize-handle {
+  --grip-width: 48px;
+  --grip-height: 10px;
+}
+
+.resize-handle:is(:hover, :active, :focus-visible) .splitter-grip,
+.chart-dock-resize-handle:is(:hover, :active, :focus-visible) .splitter-grip {
+  background: var(--handle);
+  color: var(--text-primary);
 }
 
 .chart-dock-resize-handle.chart-dock-collapsed {
@@ -1517,25 +1570,6 @@ export default {
   cursor: col-resize;
   user-select: none;
   touch-action: none;
-}
-
-.resize-line {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 12px;
-  height: 54px;
-  line-height: 1;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--handle);
-  transition: background-color 0.16s ease, height 0.16s ease;
-}
-
-.resize-handle:hover .resize-line,
-.resize-handle:active .resize-line {
-  height: 84px;
-  background: var(--handle-hover);
 }
 
 .splitter-chevron {
@@ -1793,31 +1827,263 @@ export default {
   box-shadow: 0 0 0 2px var(--danger-soft);
 }
 
-@media (max-width: 1100px) {
+
+/* Compact workbench: restrained surfaces and one divider for panel control. */
+.extra-scene-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.scene-section {
+  min-width: 0;
+}
+
+.scene-header {
+  min-height: 44px;
+  padding: 5px 8px;
+  gap: 6px;
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.scene-header h3 {
+  display: none;
+}
+
+.scene-controls {
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  padding: 0;
+}
+
+.scene-controls :deep(.el-button) {
+  height: 32px;
+  min-height: 32px;
+  min-width: 32px;
+  padding: 0 8px;
+  margin-left: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: 5px;
+  font-size: 12px;
+}
+
+.scene-controls :deep(.el-button:hover) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.scene-controls :deep(.el-button--primary),
+.scene-controls :deep(.el-button.is-open) {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.scene-controls > .tool-group:first-child {
+  padding: 2px;
+  gap: 2px;
+  border-radius: 7px;
+  background: var(--bg-elevated);
+}
+
+.scene-controls > .tool-separator {
+  height: 16px;
+  margin: 0;
+  background: var(--border-muted);
+}
+
+.more-tools-control {
+  display: inline-flex;
+}
+
+.more-tools-btn {
+  margin-left: auto !important;
+}
+
+.tool-label {
+  display: inline;
+  margin-left: 4px;
+}
+
+.extra-scene-tools {
+  display: none;
+  flex: 1 0 100%;
+  flex-wrap: wrap;
+  padding-top: 5px;
+  border-top: 1px solid var(--border-muted);
+}
+
+.tools-expanded .extra-scene-tools {
+  display: flex;
+}
+
+.extra-scene-tools > .tool-separator:first-child {
+  display: none;
+}
+
+.side-section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.panel-navigation {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 18px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.panel-navigation button {
+  position: relative;
+  min-height: 38px;
+  padding: 0 2px;
+  border: 0;
+  color: var(--text-muted);
+  background: transparent;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.panel-navigation button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -3px;
+  border-radius: 4px;
+}
+
+.panel-navigation button[aria-pressed="true"] {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.panel-navigation button[aria-pressed="true"]::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.side-panels-container {
+  flex: 1;
+  height: auto;
+  padding: 0;
+  overscroll-behavior: contain;
+}
+
+.side-panel-resize-handle {
+  display: none;
+}
+
+.side-panels-container:not(.active-panel-poseGoal) > .pose-goal-row,
+.side-panels-container:not(.active-panel-topics) > .topic-config-mini-panel,
+.side-panels-container:not(.active-panel-settings) > .settings-mini-panel {
+  display: none;
+}
+
+.side-panels-container :deep(.workbench-panel) {
+  height: auto !important;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.side-panels-container :deep(.workbench-panel-header) {
+  background: transparent;
+  border-bottom-color: var(--border-muted);
+}
+
+.side-panels-container :deep(.workbench-panel-content) {
+  overflow: visible;
+}
+
+.pose-goal-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.chart-dock-resize-handle {
+  flex-basis: 22px;
+}
+
+.chart-dock-resize-handle.chart-dock-collapsed {
+  display: none;
+}
+
+.chart-dock-panel :deep(.workbench-panel) {
+  max-height: 35dvh;
+}
+
+@container sidebar (min-width: 620px) {
+  .pose-goal-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+    gap: 12px;
+  }
+}
+
+@media (max-width: 1100px), (pointer: coarse) {
   .main-content {
-    grid-template-columns: 1fr !important;
-    grid-template-rows: minmax(55vh, 1fr) 18px auto;
-    gap: 8px;
-    overflow: auto;
-  }
-
-  .resize-handle {
-    width: 100%;
-    height: 18px;
-    cursor: pointer;
-  }
-
-  .resize-handle .resize-line {
-    width: 54px;
-    height: 18px;
+    grid-template-columns: minmax(0, 1fr) 20px minmax(280px, var(--tablet-sidebar-width)) !important;
+    overflow: hidden;
+    position: relative;
   }
 
   .main-content.sidebar-collapsed {
-    grid-template-rows: minmax(0, 1fr) 18px;
+    grid-template-columns: minmax(0, 1fr) 20px !important;
   }
 
-  .side-panels-container {
-    height: auto;
+  .resize-handle {
+    width: 20px;
+    min-width: 20px;
+  }
+
+  .tool-btn kbd {
+    display: none;
+  }
+
+}
+
+@media (max-width: 900px), (pointer: coarse) and (orientation: portrait) {
+  .main-content {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: minmax(0, 1fr) 22px minmax(0, var(--drawer-height));
+  }
+
+  .main-content.sidebar-collapsed {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: minmax(0, 1fr) 22px;
+  }
+
+  .main-content > .resize-handle {
+    width: 100%;
+    height: 22px;
+    min-width: 0;
+    cursor: row-resize;
+  }
+
+  .main-content.sidebar-collapsed > .resize-handle {
+    cursor: pointer;
+  }
+
+  .main-content > .resize-handle {
+    --grip-width: 48px;
+    --grip-height: 10px;
+  }
+
+  .resize-handle .splitter-chevron {
+    transform: rotate(90deg);
+  }
+
+  .side-section {
+    height: 100%;
+    min-height: 0;
   }
 }
 </style>

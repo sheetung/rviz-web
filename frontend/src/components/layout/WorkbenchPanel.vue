@@ -164,8 +164,8 @@ export default {
 
 .collapse-btn {
   flex: 0 0 auto;
-  width: 20px;
-  height: 20px;
+  width: 32px;
+  height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -189,4 +189,5 @@ export default {
   overflow: auto;
   padding: var(--space-2);
 }
+
 </style>

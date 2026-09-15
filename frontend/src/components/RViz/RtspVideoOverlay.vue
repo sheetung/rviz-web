@@ -540,4 +540,7 @@ export default {
   right: 8px;
   bottom: 8px;
 }
+@media (pointer: coarse) {
+  .overlay-control { width: 32px; height: 32px; opacity: 0.88; visibility: visible; pointer-events: auto; }
+}
 </style>

@@ -4,9 +4,11 @@
     class="scene3d-container"
     tabindex="0"
     @pointerdown.capture="focusSceneCanvas"
-    @mousedown="onMouseDown"
-    @mousemove="onMouseMove"
-    @mouseup="onMouseUp"
+    @pointerdown="navigationPointer.start"
+    @pointermove="navigationPointer.move"
+    @pointerup="navigationPointer.end"
+    @pointercancel="navigationPointer.cancel"
+    @lostpointercapture="navigationPointer.cancel"
   >
     <!-- 加载指示器 -->
     <div v-if="loading" class="loading-overlay">
@@ -21,6 +23,7 @@
         <strong>{{ activeToolLabel }}</strong>
         <small>{{ toolHint }}</small>
       </div>
+      <button v-if="activeTool !== 'move'" type="button" class="cancel-navigation" @pointerdown.stop @click.stop="cancelNavigationSelection">取消 / 返回移动</button>
       <div v-if="followFrameHint" class="follow-frame-hint" role="status">{{ followFrameHint }}</div>
     </div>
   </div>
@@ -28,6 +31,8 @@
 
 <script>
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { createNavigationPointer } from '../../utils/navigationPointer'
+import { shouldUseNonTypingSelect } from '../../utils/inputCapabilities'
 import { shouldHandleSceneShortcut } from '../../utils/sceneShortcuts'
 import * as THREE from 'three'
 import { useRosbridge } from '../../composables/useRosbridge'
@@ -640,6 +645,8 @@ export default {
         controls = new OrbitControls(camera, renderer.domElement)
         controls.enableDamping = true
         controls.dampingFactor = 0.05
+        controls.touches.ONE = THREE.TOUCH.ROTATE
+        controls.touches.TWO = THREE.TOUCH.DOLLY_PAN
         controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE
         controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN
         controls.mouseButtons.RIGHT = THREE.MOUSE.NONE
@@ -1291,6 +1298,30 @@ export default {
       }
     }
     
+    const navigationPointer = createNavigationPointer({
+      onStart: (event) => {
+        if (!camera || !scene || event.target !== renderer?.domElement || currentNavigationTool === 'move') return false
+        onMouseDown(event)
+        return isDragging
+      },
+      onMove: onMouseMove,
+      canFinish: (event) => {
+        const rect = containerRef.value?.getBoundingClientRect()
+        return rect && event.clientX >= rect.left && event.clientX <= rect.right &&
+          event.clientY >= rect.top && event.clientY <= rect.bottom
+      },
+      onEnd: (event) => {
+        onMouseMove(event)
+        onMouseUp()
+      },
+      onCancel: () => {
+        isDragging = false
+        dragStartPosition = null
+        dragCurrentPosition = null
+        clearPreviewArrow()
+      }
+    })
+
     /**
      * 键盘事件处理（调试用）
      */
@@ -3278,6 +3309,7 @@ export default {
     })
     
     onUnmounted(() => {
+      navigationPointer.cancel()
       if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop()
       releaseRecordingStream()
       // 清理资源
@@ -3386,6 +3418,8 @@ export default {
     }
 
     const setNavigationTool = (tool) => {
+      navigationPointer.cancel()
+      const touchInput = shouldUseNonTypingSelect()
       const nextTool = tool === 'none' ? 'move' : tool
       const supportedTools = ['move', 'select', '2d_goal', '2d_pose']
       currentNavigationTool = supportedTools.includes(nextTool) ? nextTool : 'move'
@@ -3407,7 +3441,7 @@ export default {
         switch (currentNavigationTool) {
           case 'move':
             activeToolLabel.value = '移动相机 (M)'
-            toolHint.value = '左键旋转 · 中键平移 · 滚轮缩放'
+            toolHint.value = touchInput ? '单指旋转 · 双指平移 / 缩放' : '左键旋转 · 中键平移 · 滚轮缩放'
             containerRef.value.style.cursor = 'grab'
             break
           case 'select':
@@ -3417,12 +3451,12 @@ export default {
             break
           case '2d_goal':
             activeToolLabel.value = '2D 目标 (G)'
-            toolHint.value = '左键按下选位置，拖动设方向，松开发布 · Esc 取消'
+            toolHint.value = touchInput ? '按下选位置，拖动设方向，松开发布 · 双指取消' : '左键按下选位置，拖动设方向，松开发布 · Esc 取消'
             containerRef.value.style.cursor = 'crosshair'
             break
           case '2d_pose':
             activeToolLabel.value = '2D 位姿估计 (P)'
-            toolHint.value = '左键按下选位置，拖动设方向，松开发布 · Esc 取消'
+            toolHint.value = touchInput ? '按下选位置，拖动设方向，松开发布 · 双指取消' : '左键按下选位置，拖动设方向，松开发布 · Esc 取消'
             containerRef.value.style.cursor = 'copy'
             break
           default:
@@ -4699,9 +4733,8 @@ export default {
       followFrameHint,
       mapMesh,
       mapTexture,
-      onMouseDown,
-      onMouseMove,
-      onMouseUp,
+      navigationPointer,
+      cancelNavigationSelection,
       handleResize: onWindowResize,
       // 暴露给父组件的方法
       resetCamera,
@@ -4757,6 +4790,7 @@ export default {
 
 <style scoped>
 .scene3d-container {
+  touch-action: none;
   width: 100%;
   height: 100%;
   position: relative;
@@ -4847,5 +4881,19 @@ export default {
   color: var(--accent-glow);
   font-size: 11px;
   white-space: nowrap;
+}
+.cancel-navigation {
+  pointer-events: auto;
+  min-height: 44px;
+  margin-top: 6px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+@media (pointer: coarse) {
+  .hint-content { font-family: inherit; font-size: 13px; }
 }
 </style>
