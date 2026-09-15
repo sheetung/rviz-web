@@ -60,6 +60,30 @@ def test_health_checks_bypass_shell_proxy_settings():
     assert "curl --noproxy '*' -fsS" in script
 
 
+def test_all_server_entrypoints_select_backpressured_websockets():
+    import ast
+
+    for path in [START_SCRIPT, PROJECT_ROOT / "docker/start-container.sh"]:
+        script = path.read_text(encoding="utf-8")
+        assert "--ws websockets" in script
+        result = subprocess.run(["bash", "-n", str(path)], capture_output=True)
+        assert result.returncode == 0
+    tree = ast.parse((PROJECT_ROOT / "backend/app/main.py").read_text())
+    calls = [
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "uvicorn" and node.func.attr == "run"
+    ]
+    assert len(calls) == 1
+    assert any(
+        keyword.arg == "ws" and isinstance(keyword.value, ast.Constant)
+        and keyword.value.value == "websockets"
+        for keyword in calls[0].keywords
+    )
+
+
 def test_logging_is_disabled_without_creating_log_directory(tmp_path):
     log_dir = tmp_path / "logs"
     result = subprocess.run(

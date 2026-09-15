@@ -12,6 +12,68 @@ from app.services.ros_gateway import RosGateway
 from app.services.connection_manager import ConnectionManager
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("replacement", [False, True])
+async def test_conversion_drops_frame_after_subscription_changes(
+    settings, monkeypatch, replacement
+):
+    service = Ros2Adapter(settings)
+    service.subscribers["/points"] = object()
+    service._subscription_types["/points"] = "sensor_msgs/msg/PointCloud2"
+    sink = AsyncMock()
+    service.set_message_sink(sink)
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def convert(_function, _message):
+        entered.set()
+        await release.wait()
+        return {"data": b"old frame"}
+
+    monkeypatch.setattr(asyncio, "to_thread", convert)
+    task = asyncio.create_task(service._on_message_received("/points", object()))
+    await entered.wait()
+    service.subscribers.pop("/points")
+    service._subscription_types.pop("/points")
+    if replacement:
+        service.subscribers["/points"] = object()
+        service._subscription_types["/points"] = "sensor_msgs/msg/PointCloud2"
+    release.set()
+    await task
+    sink.assert_not_awaited()
+    assert not service.message_cache
+
+
+@pytest.mark.asyncio
+async def test_spin_does_not_wait_on_http_event_loop(settings, monkeypatch):
+    from rclpy.executors import ExternalShutdownException
+
+    service = Ros2Adapter(settings)
+    service.node = Mock()
+    spin = Mock(side_effect=ExternalShutdownException)
+    monkeypatch.setattr("app.services.ros2.adapter.rclpy.spin_once", spin)
+    await service._ros_spin_loop()
+    spin.assert_called_once_with(service.node, timeout_sec=0.0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("context_alive", [False, True])
+async def test_spin_errors_are_only_normal_after_context_shutdown(
+    settings, monkeypatch, caplog, context_alive
+):
+    service = Ros2Adapter(settings)
+    service.node = Mock()
+    monkeypatch.setattr("app.services.ros2.adapter.rclpy.ok", lambda: context_alive)
+    monkeypatch.setattr(
+        "app.services.ros2.adapter.rclpy.spin_once",
+        Mock(side_effect=RuntimeError("wait set failed")),
+    )
+    with caplog.at_level("INFO"):
+        await service._ros_spin_loop()
+    assert ("Fatal error" in caplog.text) is context_alive
+    assert ("after context shutdown" in caplog.text) is not context_alive
+
+
 def test_client_ids_are_unique_under_connection_bursts(settings):
     service = Ros2Adapter(settings)
     application = RosApplication(settings, service, ConnectionManager())

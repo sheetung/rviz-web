@@ -6,7 +6,7 @@
           <div class="logo-icon"></div>
           <div class="app-identity">
             <h1 class="app-title">{{ appTitle }}</h1>
-            <span class="app-subtitle">ROS2 Workbench</span>
+            <span class="app-subtitle">ROS Workbench</span>
           </div>
         </div>
       </div>

@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import (
     QoSDurabilityPolicy,
@@ -570,17 +571,23 @@ class Ros2Adapter:
 
         try:
             while True:
-                # 非阻塞spin，处理ROS2回调
+                # 与 HTTP/WS 共用事件循环，不能在这里等待 DDS 数据。
                 if self.node:
-                    rclpy.spin_once(self.node, timeout_sec=0.01)
+                    rclpy.spin_once(self.node, timeout_sec=0.0)
 
                 # 让出控制权给其他协程
                 await asyncio.sleep(0.001)  # 1ms间隔，保持高响应性
 
         except asyncio.CancelledError:
             logger.info("ROS2 spin loop cancelled")
+        except ExternalShutdownException:
+            logger.info("ROS2 context shut down")
         except Exception as e:
-            logger.error(f"Fatal error in ROS2 spin loop: {e}", exc_info=True)
+            # SIGINT 也可能恰好发生在构造 wait set 时，表现为 RCLError。
+            if not rclpy.ok():
+                logger.info("ROS2 spin stopped after context shutdown: %s", e)
+            else:
+                logger.error(f"Fatal error in ROS2 spin loop: {e}", exc_info=True)
         finally:
             logger.info("ROS2 spin loop stopped")
 
@@ -626,12 +633,22 @@ class Ros2Adapter:
         self._message_sink = sink
 
     async def _on_message_received(self, topic: str, msg):
-        if self._message_sink is None or topic not in self.subscribers:
+        subscriber = self.subscribers.get(topic)
+        message_type = self._subscription_types.get(topic)
+        sink = self._message_sink
+        if sink is None or subscriber is None or message_type is None:
             return
         if not self._claim_topic_forward_slot(topic):
             return
         payload = await asyncio.to_thread(self._converter.to_dict, msg)
-        await self._message_sink(topic, payload, self._subscription_types[topic])
+        # 转换期间可能取消并重新订阅同名话题，旧帧不能交给新订阅。
+        if (
+            self.subscribers.get(topic) is not subscriber
+            or self._subscription_types.get(topic) != message_type
+            or self._message_sink is not sink
+        ):
+            return
+        await sink(topic, payload, message_type)
         self.message_cache.append({"topic": topic, "timestamp": time.time()})
 
     def publish_prepared(self, topic: str, message: Dict[str, Any]) -> str:

@@ -240,7 +240,13 @@ class ConnectionManager:
         except asyncio.CancelledError:
             raise
         except Exception as error:
-            logger.error("Failed to send message to %s: %s", client_id, error)
+            if isinstance(error, asyncio.TimeoutError):
+                logger.warning(
+                    "Closing slow WebSocket client %s: send timed out after %.1fs",
+                    client_id, self.send_timeout,
+                )
+            else:
+                logger.error("Failed to send message to %s: %s", client_id, error)
             # 保留 connection_info，交给具体 ROS 服务的 finally 释放
             # 该客户端持有的 ROS 订阅和发布者。
             await self._close_client_socket(

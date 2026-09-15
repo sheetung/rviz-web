@@ -4,7 +4,26 @@
 
 ## [Unreleased]
 
+### Added
+
+- 室外累积地图回放新增雷达 Odometry 与 `map → mapping_lidar` TF，支持网页 Follow Frame 和位置轨迹展示，不修改原始地图消息。
+
+- 完成 OutdoorRoad_cut0 室外累积地图生成：约 78.7 m 轨迹、311 个完整快照、约 31.5 万点；转换工具支持指定 GNSS 参考话题，补充室外回放说明。
+
+- 新增逐扫描离线累积地图导出：按 GLIM 轨迹插值配准原始 Mid360 点云，约 5 Hz 输出完整地图快照，保留历史点，不依赖前端历史缓存。
+
+- 新增独立 IndoorOffice1 GLIM CPU 建图与导出工具，生成 PLY、轨迹及累积地图 ROS2 回放包；不向后端引入 SLAM 依赖。
+- 完成首轮 9 子地图、约 19 万点地图导出与原生 ROS2 读取验证，补充坐标变换、时间戳和体素去重测试及回放说明。
+
+### Fixed
+
+- ROS2 消息转换结束后校验订阅实例，丢弃已取消或属于旧订阅的帧，修复并发断订阅 KeyError。
+- 本地、Docker 与程序入口显式使用 `websockets` 传输，避免默认 SansIO 发送缓冲积压绕过应用超时。
+- ROS2 spin 不再阻塞 HTTP/WebSocket 事件循环等待 DDS 数据；正常 ROS context 关闭不再记录 fatal 异常。
+
 ### Changed
+
+- 界面副标题由 `ROS2 Workbench` 改为 `ROS Workbench`，品牌展示不绑定 ROS 版本；实际中间件支持范围不变。
 
 - 完成 ROS2 适配边界分离：新增 RosGateway、RosApplication，ROS2 代码集中到 services/ros2/，公共层不再直接加载 ROS 依赖。
 - 会话所有权、系统状态和 WebSocket 转发归公共层；关闭时先释放 ROS 资源再移除连接状态，补充假适配器边界回归测试。

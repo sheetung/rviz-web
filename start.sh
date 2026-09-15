@@ -127,7 +127,7 @@ build_frontend() {
 run_backend() {
   local backend_host="$1" backend_port="$2"
   cd "$BACKEND_DIR"
-  exec setsid uv run --no-sync uvicorn app.main:app --host "$backend_host" --port "$backend_port"
+  exec setsid uv run --no-sync uvicorn app.main:app --host "$backend_host" --port "$backend_port" --ws websockets
 }
 
 run_frontend() {

@@ -36,10 +36,11 @@ yarn-error.log*
 .yarn-integrity
 .tmp/
 # ROS
+/local_data/
 build/
 devel/
 install/
-log/
+logs/
 
 # IDE
 .claude/

@@ -167,4 +167,5 @@ if __name__ == "__main__":
         host=settings.backend_host,
         port=8000,
         reload=settings.debug,
+        ws="websockets",
     )
