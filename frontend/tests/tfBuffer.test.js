@@ -88,6 +88,27 @@ test('lists normalized parent and child frame IDs', () => {
 })
 
 
+test('clearing Follow Frame stops updates immediately and resets the baseline', () => {
+  const buffer = new TfBuffer()
+  const tracker = new FollowFrameTracker()
+  tracker.setFrame('base')
+  assert.equal(tracker.status, 'waiting')
+  assert.equal(tracker.update(buffer, 'map'), null)
+  assert.equal(tracker.status, 'waiting')
+  buffer.updateMessage({ transforms: [stampedTransform({ seconds: 1, x: 1 })] })
+  assert.equal(tracker.update(buffer, 'map'), null)
+  assert.equal(tracker.status, 'tracking')
+  buffer.updateMessage({ transforms: [stampedTransform({ seconds: 2, x: 2 })] })
+  assert.equal(tracker.update(buffer, 'map').x, 1)
+  tracker.setFrame('')
+  assert.equal(tracker.status, 'disabled')
+  buffer.updateMessage({ transforms: [stampedTransform({ seconds: 3, x: 20 })] })
+  assert.equal(tracker.update(buffer, 'map'), null)
+  assert.equal(tracker.position, null)
+  tracker.setFrame('base')
+  assert.equal(tracker.update(buffer, 'map'), null)
+})
+
 test('follow frame tracker returns translation only and ignores rotation', () => {
   const buffer = new TfBuffer()
   const tracker = new FollowFrameTracker()

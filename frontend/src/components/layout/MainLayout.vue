@@ -1,6 +1,6 @@
 <template>
   <div class="main-layout">
-    <div class="main-content" :style="{ gridTemplateColumns: `${sceneWidth}% 10px minmax(320px, ${100 - sceneWidth}%)` }">
+    <div class="main-content" :class="{ 'sidebar-collapsed': sidebarCollapsed }" :style="{ gridTemplateColumns: sidebarCollapsed ? 'minmax(0, 1fr) 16px' : `minmax(0, ${sceneWidth}fr) 16px minmax(320px, ${100 - sceneWidth}fr)` }">
       <section class="scene-section">
         <div class="scene-panel">
           <div class="scene-header">
@@ -38,10 +38,13 @@
                       <el-dropdown-item command="top">俯视图</el-dropdown-item>
                       <el-dropdown-item command="side">侧视图</el-dropdown-item>
                       <el-dropdown-item command="iso">等距图</el-dropdown-item>
-                      <el-dropdown-item command="configured" divided>重置为配置视角</el-dropdown-item>
+                      <el-dropdown-item command="configured" divided>恢复配置视角</el-dropdown-item>
                     </el-dropdown-menu>
                   </template>
                 </el-dropdown>
+                <el-button size="small" class="tool-btn" title="重置相机：停止跟随、回到原点等距视角、显示网格与坐标轴" @click="resetSceneCamera">
+                  <el-icon :size="14"><RefreshLeft /></el-icon>
+                </el-button>
               </div>
               <span class="tool-separator"></span>
               <div class="tool-group">
@@ -128,7 +131,7 @@
                     </div>
                   </div>
                 </el-popover>
-                <el-button size="small" :type="showChartDock ? 'primary' : 'default'" @click="showChartDock = !showChartDock" class="tool-btn" title="数据图表">
+                <el-button size="small" :type="showChartDock ? 'primary' : 'default'" @click="toggleChartDock" class="tool-btn" title="数据图表">
                   <el-icon :size="14"><DataAnalysis /></el-icon>
                 </el-button>
               </div>
@@ -158,14 +161,28 @@
           </div>
         </div>
 
-        <template v-if="showChartDock">
-          <div
+          <button
+            type="button"
             class="chart-dock-resize-handle"
-            @mousedown="startChartDockResize"
-            @touchstart="startChartDockResize"
+            :class="{ 'chart-dock-collapsed': !showChartDock }"
+            :title="showChartDock ? '点击收起数据图表，拖动调整高度' : '展开数据图表'"
+            :aria-label="showChartDock ? '收起数据图表' : '展开数据图表'"
+            :aria-expanded="showChartDock"
+            aria-controls="chart-dock-content"
+            @pointerdown="startChartDockResize"
+            @pointermove="handleChartDockMove"
+            @pointerup="stopChartDockResize"
+            @pointercancel="cancelChartDockResize"
+            @lostpointercapture="cancelChartDockResize"
+            @click="onChartDockClick"
           >
-            <span></span>
-          </div>
+            <span aria-hidden="true">
+              <svg class="splitter-chevron" viewBox="0 0 16 16" focusable="false">
+                <path :d="showChartDock ? 'M4 6 L8 10 L12 6' : 'M4 10 L8 6 L12 10'" />
+              </svg>
+            </span>
+          </button>
+          <div v-show="showChartDock" id="chart-dock-content" class="chart-dock-panel">
           <WorkbenchPanel
             id="chart"
             title="数据图表"
@@ -174,19 +191,34 @@
           >
             <ChartPanel :compact="true" />
           </WorkbenchPanel>
-        </template>
+          </div>
       </section>
 
-      <div
+      <button
+        type="button"
         class="resize-handle"
-        @mousedown="startSplitterResize"
-        @touchstart="startSplitterResize"
+        :title="sidebarCollapsed ? '展开右侧功能栏' : '点击收起右侧功能栏，拖动调整宽度'"
+        :aria-label="sidebarCollapsed ? '展开右侧功能栏' : '收起右侧功能栏'"
+        :aria-expanded="!sidebarCollapsed"
+        aria-controls="workbench-sidebar"
+        @pointerdown="startSplitterResize"
+        @pointermove="handleSplitterMove"
+        @pointerup="stopSplitterResize"
+        @pointercancel="cancelSplitterResize"
+        @lostpointercapture="cancelSplitterResize"
+        @click="onSplitterClick"
       >
-        <div class="resize-line"></div>
-      </div>
+        <span class="resize-line" aria-hidden="true">
+          <svg class="splitter-chevron" viewBox="0 0 16 16" focusable="false">
+            <path :d="sidebarCollapsed ? 'M10 4 L6 8 L10 12' : 'M6 4 L10 8 L6 12'" />
+          </svg>
+        </span>
+      </button>
 
-      <aside class="side-section">
+      <aside v-show="!sidebarCollapsed" id="workbench-sidebar" class="side-section">
         <div class="side-panels-container">
+          <div class="pose-goal-row">
+          <div class="pose-goal-cell">
           <WorkbenchPanel
             id="gps"
             title="位姿信息"
@@ -197,14 +229,8 @@
               :current-odom-topic="settingsSnapshot.position.odomTopic"
             />
           </WorkbenchPanel>
-          <div
-            class="side-panel-resize-handle"
-            @mousedown="startSidePanelResize($event, 'gps')"
-            @touchstart="startSidePanelResize($event, 'gps')"
-          >
-            <span></span>
           </div>
-
+          <div class="pose-goal-cell">
           <WorkbenchPanel
             id="goal"
             title="期望目标"
@@ -219,10 +245,13 @@
               @goal-publish="onGoalPublish"
             />
           </WorkbenchPanel>
+          </div>
+          </div>
           <div
             class="side-panel-resize-handle"
-            @mousedown="startSidePanelResize($event, 'goal')"
-            @touchstart="startSidePanelResize($event, 'goal')"
+            title="调整位姿信息与期望目标高度"
+            @mousedown="startSidePanelResize($event, 'poseGoal')"
+            @touchstart="startSidePanelResize($event, 'poseGoal')"
           >
             <span></span>
           </div>
@@ -287,7 +316,7 @@
 <script>
 import { ref, nextTick, defineAsyncComponent, onBeforeUnmount } from 'vue'
 import {
-  ArrowDown, Refresh, View, VideoCamera, VideoPause, Camera, Flag, DataAnalysis, Grid, Connection, Monitor
+  ArrowDown, Refresh, RefreshLeft, View, VideoCamera, VideoPause, Camera, Flag, DataAnalysis, Grid, Connection, Monitor
 } from '@element-plus/icons-vue'
 
 // 引入面板组件
@@ -304,6 +333,7 @@ import { videoApi } from '../../services/api'
 import { sanitizeRtspUrlForStorage } from '../../utils/rtspUrl'
 import { systemMessage } from '../../composables/useSystemMessage'
 import { cloneCameraState } from '../../utils/cameraState'
+import { createSplitterGesture } from '../../utils/splitterGesture'
 
 const DEFAULT_SIDE_PANEL_HEIGHTS = {
   gps: 220,
@@ -326,6 +356,7 @@ export default {
   components: {
     ArrowDown,
     Refresh,
+    RefreshLeft,
     View,
     VideoCamera,
     VideoPause,
@@ -365,11 +396,10 @@ export default {
 
     // 传统布局控制状态
     const sceneWidth = ref(68)
+    const sidebarCollapsed = ref(false)
     const sceneShowGrid = ref(true)
     const sceneShowAxes = ref(true)
     const availableFrameIds = ref([])
-    const isResizing = ref(false)
-    const startX = ref(0)
     const startWidth = ref(0)
     const sidePanelHeights = ref({ ...DEFAULT_SIDE_PANEL_HEIGHTS })
     const sidePanelResizeState = ref({
@@ -391,7 +421,8 @@ export default {
         sceneWidth: 68,
         panelHeights: { ...DEFAULT_SIDE_PANEL_HEIGHTS },
         collapsedPanels: {
-          settings: true
+          settings: true,
+          chart: true
         }
       },
       appearance: {
@@ -457,6 +488,7 @@ export default {
     const setPanelCollapsed = (panelId, collapsed) => {
       const nextCollapsed = collapsed === true
       if (panelId === 'settings') settingsCollapsed.value = nextCollapsed
+      if (panelId === 'chart') showChartDock.value = !nextCollapsed
       settingsSnapshot.value.layout.collapsedPanels = {
         ...settingsSnapshot.value.layout.collapsedPanels,
         [panelId]: nextCollapsed
@@ -477,42 +509,69 @@ export default {
       settingsSnapshot.value.layout.panelHeights = normalizeSidePanelHeights(sidePanelHeights.value)
     }
 
+    const getPoseGoalHeight = () => Math.max(
+      sidePanelHeights.value.gps || DEFAULT_SIDE_PANEL_HEIGHTS.gps,
+      sidePanelHeights.value.goal || DEFAULT_SIDE_PANEL_HEIGHTS.goal
+    )
+
     const getSidePanelStyle = (panelId) => ({
-      height: `${sidePanelHeights.value[panelId] || DEFAULT_SIDE_PANEL_HEIGHTS[panelId]}px`
+      height: `${['gps', 'goal'].includes(panelId)
+        ? getPoseGoalHeight()
+        : sidePanelHeights.value[panelId] || DEFAULT_SIDE_PANEL_HEIGHTS[panelId]}px`
     })
 
     const getChartDockStyle = () => ({
       height: `${Math.max(220, Math.min(480, sidePanelHeights.value.chart || DEFAULT_SIDE_PANEL_HEIGHTS.chart))}px`
     })
 
-    const startChartDockResize = (event) => {
-      event.preventDefault()
-      const startY = event.type === 'mousedown' ? event.clientY : event.touches[0].clientY
-      const startHeight = sidePanelHeights.value.chart || DEFAULT_SIDE_PANEL_HEIGHTS.chart
-
-      const handleResize = (moveEvent) => {
-        moveEvent.preventDefault()
-        const clientY = moveEvent.type === 'mousemove' ? moveEvent.clientY : moveEvent.touches[0].clientY
-        const nextHeight = Math.max(220, Math.min(480, startHeight - (clientY - startY)))
+    const toggleChartDock = () => {
+      setPanelCollapsed('chart', showChartDock.value)
+      nextTick(() => scene3dRef.value?.handleResize?.())
+    }
+    let chartPointer = null
+    let chartStartHeight = 300
+    const chartGesture = createSplitterGesture({
+      onToggle: toggleChartDock,
+      onResize: (deltaY) => {
+        if (!showChartDock.value) return
+        const nextHeight = Math.max(220, Math.min(480, chartStartHeight - deltaY))
         sidePanelHeights.value = { ...sidePanelHeights.value, chart: Math.round(nextHeight) }
         syncSidePanelHeightsToSettings()
       }
+    })
 
-      const stopResize = () => {
-        document.removeEventListener('mousemove', handleResize)
-        document.removeEventListener('mouseup', stopResize)
-        document.removeEventListener('touchmove', handleResize)
-        document.removeEventListener('touchend', stopResize)
-        document.body.style.userSelect = ''
-        document.body.style.cursor = ''
-      }
-
-      document.addEventListener('mousemove', handleResize)
-      document.addEventListener('mouseup', stopResize)
-      document.addEventListener('touchmove', handleResize, { passive: false })
-      document.addEventListener('touchend', stopResize)
+    const startChartDockResize = (event) => {
+      if (!event.isPrimary || event.button !== 0 || chartPointer !== null) return
+      chartPointer = event.pointerId
+      event.currentTarget.setPointerCapture(event.pointerId)
+      chartStartHeight = Math.max(220, Math.min(480, sidePanelHeights.value.chart || DEFAULT_SIDE_PANEL_HEIGHTS.chart))
+      // The gesture's first axis is the resize axis: Y for this divider.
+      chartGesture.start(event.clientY, event.clientX)
       document.body.style.userSelect = 'none'
-      document.body.style.cursor = 'row-resize'
+      document.body.style.cursor = showChartDock.value ? 'row-resize' : 'pointer'
+    }
+
+    const handleChartDockMove = (event) => {
+      if (event.pointerId === chartPointer) chartGesture.move(event.clientY, event.clientX)
+    }
+
+    const cancelChartDockResize = () => {
+      if (chartPointer === null) return
+      chartPointer = null
+      chartGesture.cancel()
+      document.body.style.userSelect = ''
+      document.body.style.cursor = ''
+    }
+
+    const stopChartDockResize = (event) => {
+      if (event.pointerId !== chartPointer) return
+      chartGesture.end(event.clientY, event.clientX)
+      cancelChartDockResize()
+      nextTick(() => scene3dRef.value?.handleResize?.())
+    }
+
+    const onChartDockClick = (event) => {
+      if (event.detail === 0) toggleChartDock()
     }
 
     const startSidePanelResize = (event, panelId) => {
@@ -521,7 +580,9 @@ export default {
       sidePanelResizeState.value = {
         panelId,
         startY: clientY,
-        startHeight: sidePanelHeights.value[panelId] || DEFAULT_SIDE_PANEL_HEIGHTS[panelId]
+        startHeight: panelId === 'poseGoal'
+          ? getPoseGoalHeight()
+          : sidePanelHeights.value[panelId] || DEFAULT_SIDE_PANEL_HEIGHTS[panelId]
       }
 
       document.addEventListener('mousemove', handleSidePanelResize)
@@ -539,12 +600,16 @@ export default {
 
       event.preventDefault()
       const clientY = event.type === 'mousemove' ? event.clientY : event.touches[0].clientY
-      const minHeight = SIDE_PANEL_MIN_HEIGHTS[panelId] || 120
+      const minHeight = panelId === 'poseGoal'
+        ? Math.max(SIDE_PANEL_MIN_HEIGHTS.gps, SIDE_PANEL_MIN_HEIGHTS.goal)
+        : SIDE_PANEL_MIN_HEIGHTS[panelId] || 120
       const nextHeight = Math.max(minHeight, startHeight + clientY - startY)
 
       sidePanelHeights.value = {
         ...sidePanelHeights.value,
-        [panelId]: Math.round(nextHeight)
+        ...(panelId === 'poseGoal'
+          ? { gps: Math.round(nextHeight), goal: Math.round(nextHeight) }
+          : { [panelId]: Math.round(nextHeight) })
       }
       syncSidePanelHeightsToSettings()
     }
@@ -565,49 +630,55 @@ export default {
       document.body.style.cursor = ''
     }
 
-    // 传统布局分割器拖拽功能
+    const toggleSidebar = () => {
+      sidebarCollapsed.value = !sidebarCollapsed.value
+      nextTick(() => scene3dRef.value?.handleResize?.())
+    }
+    let splitterPointer = null
+    let splitterContainerWidth = 1
+    const splitterGesture = createSplitterGesture({
+      onToggle: toggleSidebar,
+      onResize: (deltaX) => {
+        if (sidebarCollapsed.value || window.matchMedia('(max-width: 1100px)').matches) return
+        const width = Math.max(42, Math.min(78, startWidth.value + deltaX / splitterContainerWidth * 100))
+        sceneWidth.value = width
+        settingsSnapshot.value.layout.sceneWidth = Number(width.toFixed(2))
+      }
+    })
+
     const startSplitterResize = (event) => {
-      isResizing.value = true
-      startX.value = event.type === 'mousedown' ? event.clientX : event.touches[0].clientX
+      if (!event.isPrimary || event.button !== 0 || splitterPointer !== null) return
+      splitterPointer = event.pointerId
+      event.currentTarget.setPointerCapture(event.pointerId)
       startWidth.value = sceneWidth.value
-      
-      document.addEventListener('mousemove', handleResize)
-      document.addEventListener('mouseup', stopResize)
-      document.addEventListener('touchmove', handleResize, { passive: false })
-      document.addEventListener('touchend', stopResize)
-      
+      splitterContainerWidth = Math.max(1, event.currentTarget.parentElement.clientWidth - 16)
+      splitterGesture.start(event.clientX, event.clientY)
       document.body.style.userSelect = 'none'
-      document.body.style.cursor = 'col-resize'
+      document.body.style.cursor = sidebarCollapsed.value ? 'pointer' : 'col-resize'
     }
-    
-    const handleResize = (event) => {
-      if (!isResizing.value) return
-      
-      event.preventDefault()
-      const currentX = event.type === 'mousemove' ? event.clientX : event.touches[0].clientX
-      const deltaX = currentX - startX.value
-      const containerWidth = window.innerWidth
-      const deltaPercent = (deltaX / containerWidth) * 100
-      
-      const newWidth = Math.max(42, Math.min(78, startWidth.value + deltaPercent))
-      sceneWidth.value = newWidth
-      settingsSnapshot.value.layout.sceneWidth = Number(newWidth.toFixed(2))
+
+    const handleSplitterMove = (event) => {
+      if (event.pointerId === splitterPointer) splitterGesture.move(event.clientX, event.clientY)
     }
-    
-    const stopResize = () => {
-      isResizing.value = false
-      
-      document.removeEventListener('mousemove', handleResize)
-      document.removeEventListener('mouseup', stopResize)
-      document.removeEventListener('touchmove', handleResize)
-      document.removeEventListener('touchend', stopResize)
-      
+
+    const cancelSplitterResize = () => {
+      if (splitterPointer === null) return
+      splitterPointer = null
+      splitterGesture.cancel()
       document.body.style.userSelect = ''
       document.body.style.cursor = ''
+    }
 
-      nextTick(() => {
-        scene3dRef.value?.handleResize?.()
-      })
+    const stopSplitterResize = (event) => {
+      if (event.pointerId !== splitterPointer) return
+      splitterGesture.end(event.clientX, event.clientY)
+      cancelSplitterResize()
+      nextTick(() => scene3dRef.value?.handleResize?.())
+    }
+
+    // Pointer activation is handled above; native keyboard/AT clicks have detail=0.
+    const onSplitterClick = (event) => {
+      if (event.detail === 0) toggleSidebar()
     }
     
     // 3D场景控制方法
@@ -776,6 +847,23 @@ export default {
       if (scene3dRef.value?.setAxesVisible) {
         scene3dRef.value.setAxesVisible(sceneShowAxes.value)
       }
+    }
+
+    const resetSceneCamera = () => {
+      const scene = scene3dRef.value
+      if (!scene) return
+      topicConfigRef.value?.setFollowFrameSilently?.('')
+      onFollowFrameChange('')
+      scene.setNavigationTool?.('move')
+      scene.resetCamera?.()
+      sceneShowGrid.value = true
+      sceneShowAxes.value = true
+      scene.setGridVisible?.(true)
+      scene.setAxesVisible?.(true)
+      Object.assign(settingsSnapshot.value.scene, {
+        showGrid: true, showAxes: true, viewPreset: 'iso', camera: scene.getCameraState?.() || null
+      })
+      systemMessage.info('相机已重置并停止跟随；原配置文件未修改，需要保留时请保存配置')
     }
 
     const setSceneViewPreset = (preset) => {
@@ -976,6 +1064,8 @@ export default {
           })
         }
       } else if (settings.type === 'layout') {
+        // Older files have no chart flag and retain the default closed state.
+        setPanelCollapsed('chart', settings.collapsedPanels?.chart !== false)
         if (typeof settings.sceneWidth === 'number') {
           const nextWidth = Math.max(42, Math.min(78, settings.sceneWidth))
           sceneWidth.value = nextWidth
@@ -1175,10 +1265,11 @@ export default {
       availableFrameIds.value = Array.isArray(frameIds) ? frameIds : []
     }
 
-    const onFollowFrameChange = (frameId) => {
+    const onFollowFrameChange = (frameId, focusScene = true) => {
       const nextFrameId = frameId || ''
       settingsSnapshot.value.followFrame = nextFrameId
       scene3dRef.value?.setFollowFrame?.(nextFrameId)
+      if (focusScene) nextTick(() => scene3dRef.value?.focusScene?.())
     }
 
     const onDisplayStatus = ({ topic, error }) => {
@@ -1194,7 +1285,7 @@ export default {
     const onConfigFollowFrameChange = (frameId) => {
       const nextFrameId = frameId || ''
       topicConfigRef.value?.setFollowFrameSilently?.(nextFrameId)
-      onFollowFrameChange(nextFrameId)
+      onFollowFrameChange(nextFrameId, false)
     }
 
     const captureSceneState = () => {
@@ -1205,7 +1296,9 @@ export default {
       settingsSnapshot.value.layout.sceneWidth = Number(sceneWidth.value.toFixed(2))
       syncSidePanelHeightsToSettings()
       settingsSnapshot.value.layout.collapsedPanels = {
-        settings: settingsCollapsed.value
+        ...settingsSnapshot.value.layout.collapsedPanels,
+        settings: settingsCollapsed.value,
+        chart: !showChartDock.value
       }
       const videoLayout = rtspVideoRef.value?.getLayout?.()
       if (videoLayout) {
@@ -1214,6 +1307,9 @@ export default {
     }
 
     onBeforeUnmount(() => {
+      stopSidePanelResize()
+      cancelChartDockResize()
+      cancelSplitterResize()
       rtspConnectAttempt += 1
       releaseRtspSession(rtspSessionId.value)
       rtspSessionId.value = ''
@@ -1226,6 +1322,7 @@ export default {
       topicConfigRef,
       activeSceneTool,
       showChartDock,
+      toggleChartDock,
       showRtspVideo,
       showRtspConnection,
       rtspConnecting,
@@ -1239,11 +1336,20 @@ export default {
       availableFrameIds,
       displaySnapshot,
       sceneWidth,
+      sidebarCollapsed,
+      handleSplitterMove,
+      stopSplitterResize,
+      cancelSplitterResize,
+      onSplitterClick,
       sidePanelHeights,
       startSplitterResize,
       getSidePanelStyle,
       getChartDockStyle,
       startChartDockResize,
+      handleChartDockMove,
+      stopChartDockResize,
+      cancelChartDockResize,
+      onChartDockClick,
       startSidePanelResize,
       refreshPointClouds,
       captureSceneScreenshot,
@@ -1258,6 +1364,7 @@ export default {
       toggleGrid,
       toggleAxes,
       setSceneViewPreset,
+      resetSceneCamera,
       setExpectedTargetTool,
       sceneShowGrid,
       sceneShowAxes,
@@ -1330,7 +1437,11 @@ export default {
 }
 
 .chart-dock-resize-handle {
-  flex: 0 0 8px;
+  flex: 0 0 18px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1340,8 +1451,13 @@ export default {
 }
 
 .chart-dock-resize-handle span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 54px;
-  height: 4px;
+  height: 14px;
+  line-height: 1;
+  overflow: hidden;
   border-radius: 999px;
   background: var(--handle);
   transition: width 0.16s ease, background-color 0.16s ease;
@@ -1351,6 +1467,15 @@ export default {
 .chart-dock-resize-handle:active span {
   width: 84px;
   background: var(--handle-hover);
+}
+
+.chart-dock-resize-handle.chart-dock-collapsed {
+  cursor: pointer;
+}
+
+.chart-dock-resize-handle:focus-visible {
+  outline: 2px solid var(--handle-hover);
+  outline-offset: -2px;
 }
 
 .scene-header {
@@ -1380,8 +1505,12 @@ export default {
 }
 
 .resize-handle {
-    width: 8px;
-    min-width: 8px;
+  width: 16px;
+  min-width: 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1391,8 +1520,13 @@ export default {
 }
 
 .resize-line {
-  width: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
   height: 54px;
+  line-height: 1;
+  overflow: hidden;
   border-radius: 999px;
   background: var(--handle);
   transition: background-color 0.16s ease, height 0.16s ease;
@@ -1404,9 +1538,53 @@ export default {
   background: var(--handle-hover);
 }
 
+.splitter-chevron {
+  display: block;
+  width: 10px;
+  height: 10px;
+  flex: 0 0 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.resize-handle:focus-visible {
+  outline: 2px solid var(--handle-hover);
+  outline-offset: -2px;
+}
+
+.sidebar-collapsed .resize-handle {
+  cursor: pointer;
+}
+
 .side-section {
   height: 100%;
   overflow: hidden;
+  container-type: inline-size;
+  container-name: sidebar;
+}
+
+.pose-goal-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  gap: 8px;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.pose-goal-cell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+@container sidebar (max-width: 519px) {
+  .pose-goal-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
 }
 
 .side-panels-container {
@@ -1618,13 +1796,24 @@ export default {
 @media (max-width: 1100px) {
   .main-content {
     grid-template-columns: 1fr !important;
-    grid-template-rows: minmax(55vh, 1fr) auto;
+    grid-template-rows: minmax(55vh, 1fr) 18px auto;
     gap: 8px;
     overflow: auto;
   }
 
   .resize-handle {
-    display: none;
+    width: 100%;
+    height: 18px;
+    cursor: pointer;
+  }
+
+  .resize-handle .resize-line {
+    width: 54px;
+    height: 18px;
+  }
+
+  .main-content.sidebar-collapsed {
+    grid-template-rows: minmax(0, 1fr) 18px;
   }
 
   .side-panels-container {

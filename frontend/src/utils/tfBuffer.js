@@ -150,15 +150,18 @@ export class FollowFrameTracker {
   constructor() {
     this.frameId = ''
     this.position = null
+    this.status = 'disabled'
   }
 
   setFrame(frameId) {
     this.frameId = normalizeFrame(frameId)
     this.position = null
+    this.status = this.frameId ? 'waiting' : 'disabled'
   }
 
   reset() {
     this.position = null
+    this.status = this.frameId ? 'waiting' : 'disabled'
   }
 
   update(tfBuffer, fixedFrame) {
@@ -166,9 +169,11 @@ export class FollowFrameTracker {
     const transform = tfBuffer.lookupTransform(fixedFrame, this.frameId)
     if (!transform) {
       this.position = null
+      this.status = 'waiting'
       return null
     }
 
+    this.status = 'tracking'
     const nextPosition = new THREE.Vector3().setFromMatrixPosition(transform)
     if (!this.position) {
       this.position = nextPosition

@@ -107,7 +107,8 @@ def test_symlink_config_is_rejected(config_storage):
 
 
 @pytest.mark.asyncio
-async def test_theme_and_collapsed_panels_round_trip(config_storage):
+@pytest.mark.parametrize("chart_collapsed", [True, False])
+async def test_theme_and_collapsed_panels_round_trip(config_storage, chart_collapsed):
     config_dir, _, _ = config_storage
     payload = configs.ConfigPayload(
         name="light.rvizweb",
@@ -116,7 +117,7 @@ async def test_theme_and_collapsed_panels_round_trip(config_storage):
             displays=[],
             layout=configs.LayoutConfig(
                 sceneWidth=64,
-                collapsedPanels={"settings": False, "controller": True},
+                collapsedPanels={"settings": False, "controller": True, "chart": chart_collapsed},
             ),
             appearance=configs.AppearanceConfig(theme="light"),
         ),
@@ -127,7 +128,7 @@ async def test_theme_and_collapsed_panels_round_trip(config_storage):
 
     assert saved.config.appearance.theme == "light"
     assert saved.config.layout.sceneWidth == 64
-    assert saved.config.layout.collapsedPanels == {"settings": False}
+    assert saved.config.layout.collapsedPanels == {"settings": False, "chart": chart_collapsed}
 
 
 @pytest.mark.asyncio

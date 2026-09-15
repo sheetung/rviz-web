@@ -159,6 +159,7 @@ export default {
 
 .goal-meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   padding: 6px 8px;
@@ -176,6 +177,8 @@ export default {
 }
 
 .goal-meta strong {
+  overflow-wrap: anywhere;
+  min-width: 0;
   color: var(--text-primary);
   font-weight: 600;
   font-size: 12px;
@@ -196,6 +199,7 @@ export default {
 
 .goal-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
   margin-top: auto;

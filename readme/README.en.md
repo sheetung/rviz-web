@@ -30,9 +30,9 @@ View 3D point clouds, robot poses, live charts, and video in one place, with top
 
 RVizWeb is a web visualization tool for ROS, designed for robot debugging, UAV monitoring, and algorithm demonstrations. The backend connects to the ROS network and the frontend displays data in a browser, so viewers do not need to install a desktop visualization client.
 
-The project uses **Vue 3 + Three.js** for its interface and 3D scenes, and **FastAPI + rclpy** to read and publish ROS messages, with real-time data transported over WebSocket. It provides RViz-style Displays, Fixed Frame settings, and camera tools, along with `.rvizweb` configurations for different robots and tasks.
+The project uses **Vue 3 + Three.js** for its interface and 3D scenes, and **FastAPI + rospy / rclpy** to connect to ROS1 / ROS2, with real-time data transported over WebSocket. It provides RViz-style Displays, Fixed Frame settings, and camera tools, along with `.rvizweb` configurations for different robots and tasks.
 
-> The current backend uses rclpy, and ROS 1 adaptation is on the roadmap. The deployment instructions below describe the existing implementation; custom messages require the corresponding workspace to be installed and sourced.
+> ROS1 and ROS2 are supported. Each backend instance runs one ROS runtime; it is not a ROS1/ROS2 bridge. Custom messages require the corresponding workspace to be installed and sourced. See the [ROS1 guide](../docs/ros1-testing.md) for deployment and validation limits.
 
 ## Contents
 
@@ -62,7 +62,7 @@ The project uses **Vue 3 + Three.js** for its interface and 3D scenes, and **Fas
 
 ### Main Supported Display Messages
 
-| Message type (current backend) | Purpose |
+| Message type (normalized frontend format) | Purpose |
 | --- | --- |
 | `sensor_msgs/msg/PointCloud2` | Point clouds and voxels |
 | `sensor_msgs/msg/LaserScan` | Laser scans |
@@ -89,12 +89,12 @@ ROS1 has a dedicated adapter and deployment configuration; see the [ROS1 deploym
 
 ### Option 1: Run Locally
 
-Prepare a working ROS 2 environment and the following dependencies:
+The following example uses ROS2; ROS1 configuration is described below. ROS1 native `package/Type` names are normalized to the frontend's `package/msg/Type` format.
 
 | Dependency | Requirement |
 | --- | --- |
 | ROS 2 | Installed and able to discover the target topics; the default setup path is `/opt/ros/humble/setup.bash` |
-| Node.js | `^20.19.0` or `>=22.12.0`, matching the current frontend build dependencies |
+| Node.js / npm | Exact versions are pinned in `.node-version` / `.npm-version`; the installer checks and installs them in the project cache |
 | Python | 3.10–3.12, with ROS 2's `rclpy` importable |
 | uv | Python environment management; if missing, the script uses curl to run the official installer |
 | FFmpeg | RTSP transcoding; dependency synchronization checks for it and attempts installation through the system package manager if missing |
@@ -128,6 +128,18 @@ For custom messages, append the workspace's `install/setup.bash` to `ROS2_SETUP_
 
 Open **http://localhost:3000/** in your browser. From another device, use the host machine's LAN IP address. Press `Ctrl+C` to stop the services.
 
+For native ROS1, use the same startup commands with this `.env` configuration:
+
+```dotenv
+ROS_WS_URL=/ws/ros1
+ROS1_SETUP_PATHS="/opt/ros/noetic/setup.bash"
+ROS_MASTER_URI=http://192.168.1.10:11311
+ROS_IP=192.168.1.100
+APP_HOST=0.0.0.0
+```
+
+Replace the addresses with the Master and local host LAN IPs. The backend still requires Python 3.10–3.12 with importable ROS1 packages, not Noetic's default Python 3.8. Use the separate ROS1 container if these requirements cannot be met. Keep one runtime per deployment; changing runtimes requires preparing a matching virtual environment.
+
 ### Option 2: Docker Compose
 
 For Linux hosts with Docker Engine and Compose installed. After cloning the repository and preparing `.env`, run:
@@ -146,6 +158,15 @@ Open **http://localhost:3000/**. The container uses host networking to join the 
 - Stop with `docker compose down`. After updating the code, run the build-and-start command again.
 
 > **Access scope:** The application does not provide login authentication. Use a trusted LAN, VPN, or firewall, and do not expose service ports directly to the public Internet. ROS publishing is allowed only on `/goal_pose`, `/initialpose`, and `/cmd_vel` by default; explicitly add other topics to the publish allowlist in `.env`.
+
+For ROS1 Docker deployment, set `ROS_MASTER_URI` and the local host's `ROS_IP` in `.env`, start your Master, then run:
+
+```bash
+docker compose -f docker-compose.ros1.yml up -d --build
+docker compose -f docker-compose.ros1.yml logs -f
+```
+
+The ROS1 image uses Ubuntu 22.04 native ROS1 1.15 packages and Python 3.10. Open `http://HOST_IP:3000`; do not run both default Compose deployments on the same ports. Stop with `docker compose -f docker-compose.ros1.yml down`. Container builds and target networks still require acceptance testing as described in the [ROS1 guide](../docs/ros1-testing.md).
 
 ## Usage
 
@@ -229,14 +250,14 @@ For component integration, system messages, configuration extensions, and indepe
 
 Planned work:
 
-- Add ROS 1 adaptation to support more ROS environments.
+- Expand ROS1 / ROS2 hardware-network, container, and long-running multi-client validation.
 - Improve TF past/future extrapolation error states and Display lifecycle coverage.
 - Add automated integration tests for WebSocket reconnection and real ROS 2 graphs.
 - Remove legacy layouts and example components to reduce maintenance effort.
 
 ## Community and Feedback
 
-- **Bugs and suggestions:** [GitHub Issues](https://github.com/sheetung/rviz-web/issues). Include reproduction steps, ROS 2 version, deployment method, and relevant logs.
+- **Bugs and suggestions:** [GitHub Issues](https://github.com/sheetung/rviz-web/issues). Include reproduction steps, ROS1 / ROS2 distribution, deployment method, and relevant logs.
 - **Code contributions:** [Pull Requests](https://github.com/sheetung/rviz-web/pulls).
 - **QQ group:** 965312424.
 

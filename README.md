@@ -30,9 +30,9 @@
 
 RVizWeb 是面向 ROS 的 Web 可视化工具，适用于机器人调试、无人机状态监控和算法演示。后端接入 ROS 网络，前端通过浏览器展示数据，查看端无需安装桌面可视化客户端。
 
-项目采用 **Vue 3 + Three.js** 构建交互界面与三维场景，使用 **FastAPI + rclpy** 读取和发布 ROS 消息，通过 WebSocket 传输实时数据。交互沿用 RViz 风格的 Displays、Fixed Frame 和相机工具，并支持保存不同机器人与任务的 `.rvizweb` 配置。
+项目采用 **Vue 3 + Three.js** 构建交互界面与三维场景，使用 **FastAPI + rospy / rclpy** 接入 ROS1 / ROS2，通过 WebSocket 传输实时数据。交互沿用 RViz 风格的 Displays、Fixed Frame 和相机工具，并支持保存不同机器人与任务的 `.rvizweb` 配置。
 
-> 当前后端基于 rclpy，ROS 1 适配已列入开发计划。以下部署说明对应现有实现；自定义消息需安装并加载对应工作空间。
+> 已支持 ROS1 和 ROS2，每个后端实例固定运行一种 ROS 环境，不是 ROS1/ROS2 消息桥。自定义消息需安装并加载对应工作空间；ROS1 部署与验证边界见 [ROS1 指南](./docs/ros1-testing.md)。
 
 ## 目录
 
@@ -62,7 +62,7 @@ RVizWeb 是面向 ROS 的 Web 可视化工具，适用于机器人调试、无�
 
 ### 支持的主要显示消息
 
-| 消息类型（当前后端） | 用途 |
+| 消息类型（统一前端格式） | 用途 |
 | --- | --- |
 | `sensor_msgs/msg/PointCloud2` | 点云与体素显示 |
 | `sensor_msgs/msg/LaserScan` | 激光扫描 |
@@ -72,7 +72,7 @@ RVizWeb 是面向 ROS 的 Web 可视化工具，适用于机器人调试、无�
 | `visualization_msgs/msg/MarkerArray` | 多个可视化标记 |
 | `nav_msgs/msg/OccupancyGrid` | 栅格地图 |
 
-自动订阅 `/tf` 与 `/tf_static`，将数据转换到选定的 Fixed Frame。找不到 TF 链时，对应 Display 会显示原因并隐藏无法正确定位的数据。地图文件设置入口目前暂时隐藏，OccupancyGrid 底层显示能力仍保留。
+ROS1 原生 `package/Type` 由适配器转换为上述统一格式。自动订阅 `/tf` 与 `/tf_static`，将数据转换到选定的 Fixed Frame。找不到 TF 链时，对应 Display 会显示原因并隐藏无法正确定位的数据。地图文件设置入口目前暂时隐藏，OccupancyGrid 底层显示能力仍保留。
 
 ## 界面预览
 
@@ -89,12 +89,12 @@ ROS1 已提供独立适配器与部署配置，参见 [ROS1 部署与测试](doc
 
 ### 方式一：本地运行
 
-准备可用的 ROS 2 环境，以及以下依赖：
+下面以 ROS2 为例；ROS1 配置见随后说明。
 
 | 依赖 | 要求 |
 | --- | --- |
 | ROS 2 | 已安装并能发现目标话题；默认 setup 路径为 `/opt/ros/humble/setup.bash` |
-| Node.js | `^20.19.0` 或 `>=22.12.0`，与当前前端构建依赖保持一致 |
+| Node.js / npm | 精确版本见 `.node-version` / `.npm-version`；安装脚本自动检查并安装到项目缓存 |
 | Python | 3.10–3.12，且可导入 ROS 2 的 `rclpy` |
 | uv | Python 环境管理；未安装时脚本会通过 curl 调用官方安装脚本 |
 | FFmpeg | 用于 RTSP 转流；同步依赖时脚本会检查，缺失时尝试通过系统包管理器安装 |
@@ -128,6 +128,18 @@ APP_PORT=3000
 
 浏览器打开 **http://localhost:3000/**；其他设备使用运行机器的局域网 IP。按 `Ctrl+C` 停止服务。
 
+原生 ROS1 部署将 `.env` 改为以下配置，使用相同启动命令：
+
+```dotenv
+ROS_WS_URL=/ws/ros1
+ROS1_SETUP_PATHS="/opt/ros/noetic/setup.bash"
+ROS_MASTER_URI=http://192.168.1.10:11311
+ROS_IP=192.168.1.100
+APP_HOST=0.0.0.0
+```
+
+地址分别替换为 Master 和本机局域网 IP。后端仍要求 Python 3.10–3.12 且能导入 ROS1 包，不能直接使用 Noetic 默认 Python 3.8；不满足时使用下面的独立 ROS1 容器。每次部署固定一种环境，更换环境需重新准备匹配的虚拟环境。
+
 ### 方式二：Docker Compose
 
 适用于安装了 Docker Engine 和 Compose 的 Linux 主机。在克隆仓库并准备好 `.env` 后执行：
@@ -146,6 +158,15 @@ docker compose logs -f
 - 停止服务：`docker compose down`；更新代码后重新执行构建启动命令。
 
 > **访问范围：** 应用未提供登录鉴权，请在可信局域网、VPN 或防火墙保护下使用，勿将服务端口直接暴露到公网。ROS 发布默认仅允许 `/goal_pose`、`/initialpose` 和 `/cmd_vel`，其他话题需在 `.env` 中显式加入发布白名单。
+
+ROS1 使用独立 Compose：在 `.env` 设置 `ROS_MASTER_URI` 和本机 `ROS_IP`，启动已有 Master 后执行：
+
+```bash
+docker compose -f docker-compose.ros1.yml up -d --build
+docker compose -f docker-compose.ros1.yml logs -f
+```
+
+ROS1 镜像使用 Ubuntu 22.04 原生 ROS1 1.15 与 Python 3.10。默认同样访问 `http://本机IP:3000`；不要与 ROS2 Compose 同机同时占用默认端口。停止时使用 `docker compose -f docker-compose.ros1.yml down`。容器构建及目标网络仍需按 [ROS1 测试指南](./docs/ros1-testing.md) 验收。
 
 ## 使用说明
 
@@ -229,14 +250,14 @@ uv run python -m compileall -q app
 
 后续计划：
 
-- 增加 ROS 1 适配，扩展可接入的 ROS 环境。
+- 完善 ROS1 / ROS2 实机网络、容器及长时间多客户端验证。
 - 完善 TF 过去 / 未来外推错误状态与 Display 生命周期覆盖。
 - 增加 WebSocket 重连和真实 ROS 2 图的自动化集成测试。
 - 清理历史布局与示例组件，降低维护成本。
 
 ## 交流与反馈
 
-- **问题与建议**：[GitHub Issues](https://github.com/sheetung/rviz-web/issues)，请附复现步骤、ROS 2 版本、运行方式及相关日志。
+- **问题与建议**：[GitHub Issues](https://github.com/sheetung/rviz-web/issues)，请附复现步骤、ROS1 / ROS2 发行版、运行方式及相关日志。
 - **代码贡献**：[Pull Requests](https://github.com/sheetung/rviz-web/pulls)。
 - **QQ 交流群**：965312424。
 

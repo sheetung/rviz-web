@@ -3,6 +3,7 @@
     ref="containerRef"
     class="scene3d-container"
     tabindex="0"
+    @pointerdown.capture="focusSceneCanvas"
     @mousedown="onMouseDown"
     @mousemove="onMouseMove"
     @mouseup="onMouseUp"
@@ -20,12 +21,14 @@
         <strong>{{ activeToolLabel }}</strong>
         <small>{{ toolHint }}</small>
       </div>
+      <div v-if="followFrameHint" class="follow-frame-hint" role="status">{{ followFrameHint }}</div>
     </div>
   </div>
 </template>
 
 <script>
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { shouldHandleSceneShortcut } from '../../utils/sceneShortcuts'
 import * as THREE from 'three'
 import { useRosbridge } from '../../composables/useRosbridge'
 import { useConnectionStore } from '../../composables/useConnectionStore'
@@ -56,6 +59,7 @@ export default {
     const activeTool = ref('move')
     const activeToolLabel = ref('移动相机 (M)')
     const toolHint = ref('左键旋转 · 中键平移 · 滚轮缩放')
+    const followFrameHint = ref('')
     
     // Three.js 核心对象
     let scene = null
@@ -239,6 +243,11 @@ export default {
 
     const applyFollowFrame = () => {
       const translation = followFrameTracker.update(tfBuffer, fixedFrameId)
+      followFrameHint.value = followFrameTracker.status === 'disabled'
+        ? ''
+        : followFrameTracker.status === 'waiting'
+          ? `等待 TF：${fixedFrameId} ← ${followFrameTracker.frameId}；相机仍可手动旋转`
+          : `跟随：${followFrameTracker.frameId}（使用已收到的 TF）`
       if (!translation || !camera || !controls) return
       camera.position.add(translation)
       controls.target.add(translation)
@@ -1286,16 +1295,11 @@ export default {
      * 键盘事件处理（调试用）
      */
     const onKeyDown = (event) => {
-      const target = event.target
-      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target?.isContentEditable) {
-        return
-      }
-
       const isNavigationActive = currentNavigationTool === '2d_goal' || currentNavigationTool === '2d_pose'
       const isSceneFocused = document.activeElement === containerRef.value ||
           containerRef.value?.contains(document.activeElement)
 
-      if (isNavigationActive || isSceneFocused) {
+      if (shouldHandleSceneShortcut(event, isSceneFocused, isNavigationActive)) {
         switch (event.key.toLowerCase()) {
           case 'escape':
             event.preventDefault()
@@ -1351,9 +1355,16 @@ export default {
     const resetCamera = () => {
       activateCamera('perspective')
       if (camera && controls) {
+        // Consume pending orbit/pan damping before installing the reset pose.
+        const damping = controls.enableDamping
+        controls.enableDamping = false
+        controls.update()
+        controls.enableDamping = damping
         // Reset to angled map view while keeping world X horizontal.
         camera.up.set(0, 0, 1)
         camera.position.set(0, -14, 10)
+        camera.zoom = 1
+        camera.updateProjectionMatrix()
         controls.target.set(0, 0, 0)
         camera.lookAt(controls.target)
         controls.update()
@@ -3365,6 +3376,11 @@ export default {
       applyFollowFrame()
     }
 
+    const focusScene = () => containerRef.value?.focus({ preventScroll: true })
+    const focusSceneCanvas = (event) => {
+      if (event.target === renderer?.domElement) focusScene()
+    }
+
     const setGoalTopic = (topicName) => {
       goalPublishTopic = typeof topicName === 'string' ? topicName.trim() : ''
     }
@@ -4680,6 +4696,7 @@ export default {
       activeTool,
       activeToolLabel,
       toolHint,
+      followFrameHint,
       mapMesh,
       mapTexture,
       onMouseDown,
@@ -4718,6 +4735,8 @@ export default {
       publishGoalPoseFromInput,
       setFixedFrame,
       setFollowFrame,
+      focusScene,
+      focusSceneCanvas,
       loadMapFile,
       loadMapFiles,
       fitCameraToPointCloud,
@@ -4791,6 +4810,8 @@ export default {
   z-index: 100;
   opacity: 0.7;
   transition: opacity 0.3s;
+  max-width: calc(100% - 20px);
+  pointer-events: none;
 }
 
 .tool-hint:hover {
@@ -4807,8 +4828,19 @@ export default {
   font-size: 11px;
   border: 1px solid var(--accent-strong-30);
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
+
+.follow-frame-hint {
+  margin-top: 4px;
+  padding: 4px 8px;
+  color: var(--text-primary);
+  background: var(--surface-tooltip);
+  border-radius: 4px;
+  font-size: 11px;
+  overflow-wrap: anywhere;
 }
 
 .hint-content strong {

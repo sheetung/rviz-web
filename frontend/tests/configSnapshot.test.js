@@ -3,6 +3,12 @@ import assert from 'node:assert/strict'
 
 import { createConfigFingerprint } from '../src/utils/configSnapshot.js'
 
+test('config fingerprints detect chart dock visibility changes', () => {
+  const closed = { layout: { collapsedPanels: { settings: true, chart: true } } }
+  const opened = { layout: { collapsedPanels: { settings: true, chart: false } } }
+  assert.notEqual(createConfigFingerprint(closed), createConfigFingerprint(opened))
+})
+
 test('config fingerprints ignore object key order', () => {
   const first = { fixedFrame: 'map', scene: { showGrid: true, showAxes: false } }
   const second = { scene: { showAxes: false, showGrid: true }, fixedFrame: 'map' }

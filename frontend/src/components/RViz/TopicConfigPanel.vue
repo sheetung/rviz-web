@@ -37,11 +37,12 @@
         <div class="property-row global-property">
           <span>Follow Frame</span>
           <el-select
-            v-model="followFrame"
+            :model-value="followFrame"
+            :empty-values="[null, undefined]"
             :filterable="allowSelectFiltering"
             placeholder="None"
             size="small"
-            @change="updateFollowFrame"
+            @update:model-value="updateFollowFrame"
           >
             <el-option label="None" value="" />
             <el-option
@@ -687,8 +688,9 @@ export default {
       emit('fixed-frame-change', fixedFrame.value || 'map')
     }
 
-    const updateFollowFrame = () => {
-      emit('follow-frame-change', followFrame.value || '')
+    const updateFollowFrame = (frameId) => {
+      followFrame.value = typeof frameId === 'string' ? frameId : ''
+      emit('follow-frame-change', followFrame.value)
     }
 
     const normalizeTrajectoryLength = (value) => {

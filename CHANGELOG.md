@@ -6,11 +6,6 @@
 
 ### Added
 
-- ROS1 原生 rospy 适配器：图查询、订阅/发布、消息结构转换、二进制点云与 latched/static TF 保留；复用公共应用层及前端显示。
-- `/ws/ros1`、`/ws/ros2` 和对应版本 HTTP API，错版本明确拒绝；默认 `/ws` 保留当前实例语义。
-- ROS1 Dockerfile、Compose、双实例代理示例及部署测试指南；新增原生 ROS1 集成脚本和边界回归测试。
-- 环境路径统一为 `ROS_SETUP_PATHS`（移除旧名称，不提供别名），运行版本由加载的 ROS 环境决定；远端 WS 同步选择 HTTP API，不再改变本地后端端口。
-
 - 室外累积地图回放新增雷达 Odometry 与 `map → mapping_lidar` TF，支持网页 Follow Frame 和位置轨迹展示，不修改原始地图消息。
 
 - 完成 OutdoorRoad_cut0 室外累积地图生成：约 78.7 m 轨迹、311 个完整快照、约 31.5 万点；转换工具支持指定 GNSS 参考话题，补充室外回放说明。
@@ -49,6 +44,28 @@
 
 - 移除 `BACKEND_PORT`、`FRONTEND_PORT`、`FRONTEND_HOST`、`FRONTEND_PUBLIC_HOST` 和 `VITE_ROS_WS_URL` 等旧部署变量，不提供兼容迁移。
 - 移除 `ROS_PUBLISH_TYPE_ALLOWLIST`、`VITE_DEBUG`、`FFMPEG_PATH` 以及 ROS、WebSocket、配置备份和 RTSP 的高级环境变量。
+
+## [frontend 1.3.2] - 相机交互优化
+
+### Changed
+
+- 增加“重置相机”按钮，停止跟随、恢复默认透视视角与网格/坐标轴；与“恢复配置视角”区分，不自动覆盖原配置。
+- Follow Frame 直接应用下拉框新值并支持 None，缺少变换时显示等待 TF 提示；非输入状态下 M 可从其他面板返回相机工具。
+
+## [frontend 1.3.1] - 布局优化
+
+### Changed
+
+- 右侧功能栏和数据图表支持点击分隔条收起/展开，拖动调整尺寸，保留原尺寸和订阅；箭头居中显示。
+- 位姿信息与期望目标并排显示，共用分隔条同步调整高度，窄栏自动上下排列。
+- 数据图表展开状态保存到 `.rvizweb`，重新加载配置时恢复。
+
+## [backend 1.4.0] - 增加 ROS1 适配器
+
+### Added
+
+- 增加 ROS1 原生 rospy 适配器，支持图查询、订阅/发布、消息转换、二进制点云及 latched/static TF；静态 TF 更换父级时替换旧关系。
+- 配套 ROS1 / ROS2 版本路由、环境选择、依赖检查、可选本机 Master 启动，以及 Docker/Compose 部署和测试说明。
 
 ## [1.3.0] - 2026-07-25
 

@@ -231,7 +231,8 @@ class Ros1Adapter:
                 header = getattr(msg, "_connection_header", {}) or {}
                 if topic_name == "/tf_static":
                     for tf in msg.transforms:
-                        key = (tf.header.frame_id, tf.child_frame_id)
+                        # A child has one current parent, including after reparenting.
+                        key = tf.child_frame_id
                         if key in state["static"] or len(state["static"]) < 2048:
                             state["static"][key] = tf
                     state["pending_latched"]["tf"] = cls(
