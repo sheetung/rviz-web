@@ -98,8 +98,8 @@ class ReplayStream {
   }
   void publish(FramePtr frame) {
     std::lock_guard<std::mutex> guard(mutex_);
-    last_ = std::move(frame);
-    for (const auto& weak : sinks_) if (auto sink = weak.lock()) (*sink)(last_);
+    if (!frame->conversion_error && !frame->throttled) last_ = frame;
+    for (const auto& weak : sinks_) if (auto sink = weak.lock()) (*sink)(frame);
   }
  private:
   std::mutex mutex_;

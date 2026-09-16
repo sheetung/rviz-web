@@ -16,6 +16,7 @@ class RosAdapter {
   virtual std::string middleware() const = 0;
   virtual bool ready() const = 0;
   virtual Json::Value topics() = 0;
+  virtual Json::Value metrics() { return Json::Value(Json::objectValue); }
   virtual bool supports(const std::string& type) = 0;
   virtual std::shared_ptr<void> subscribe(const std::string& topic, const std::string& type,
                                          const std::string& reliability, const std::string& durability, Sink sink) = 0;

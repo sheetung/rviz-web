@@ -37,7 +37,7 @@
 
         <div class="version-meta" aria-label="版本信息">
           <span>前端 v{{ frontendVersion }}</span>
-          <span>后端 v{{ connectionStore.capabilities?.backend_version || backendVersion }}</span>
+          <span>{{ backendVersionText }}</span>
         </div>
 
         <div v-if="connectionStore.subscribedTopics.length > 0" class="subscribed-topics">
@@ -76,6 +76,15 @@ export default {
     const statusRef = ref(null)
     const frontendVersion = import.meta.env.VITE_FRONTEND_VERSION || 'unknown'
     const backendVersion = ref('unknown')
+    const backendVersionText = computed(() => {
+      if (!connectionStore.isConnected) return '后端未连接'
+      const version = connectionStore.backendMode === 'v2'
+        ? connectionStore.capabilities?.backend_version
+        : backendVersion.value
+      return version && !['unknown', 'unavailable'].includes(version)
+        ? `后端 v${version}`
+        : '后端版本未知'
+    })
 
     // 徽章类型
     const badgeType = computed(() => {
@@ -136,7 +145,7 @@ export default {
 
     onMounted(() => {
       document.addEventListener('click', handleDocumentClick)
-      fetchBackendVersion()
+      if (connectionStore.backendMode !== 'v2') fetchBackendVersion()
     })
 
     onUnmounted(() => {
@@ -153,6 +162,7 @@ export default {
       hiddenTopicCount,
       frontendVersion,
       backendVersion,
+      backendVersionText,
       toggleDetails,
       closeDetails,
       reconnect

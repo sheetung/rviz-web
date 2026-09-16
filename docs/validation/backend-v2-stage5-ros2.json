@@ -1,0 +1,72 @@
+{
+  "duration_seconds": 180,
+  "fast_client_clouds": [
+    1778,
+    1778,
+    1778
+  ],
+  "shared_streams": {
+    "max_shared_streams": 64,
+    "max_snapshot_bytes": 67108864,
+    "pointcloud_processing": {
+      "coordinate_frame": "source_message_frame",
+      "crop": null,
+      "max_hz": 0.0,
+      "topics": "*",
+      "voxel_selection": "first_original_point",
+      "voxel_size": 0.0
+    },
+    "shared_streams": 2,
+    "snapshot_bytes": 252870,
+    "streams": [
+      {
+        "clients": 3,
+        "conversion_errors": 0,
+        "conversion_ms_average": 0.08859529249335223,
+        "conversion_ms_max": 0.871432,
+        "durability": "auto",
+        "encoded": 4889,
+        "encoded_bytes": 4263951,
+        "encoded_bytes_per_second_average": 23638.699273495502,
+        "last_error": null,
+        "last_received_age_ms": 18.531925,
+        "received": 4889,
+        "received_hz_average": 27.103876369151408,
+        "reliability": "auto",
+        "snapshot_cached": true,
+        "throttled": 0,
+        "topic": "/sim/uav/odom",
+        "type": "nav_msgs/msg/Odometry"
+      },
+      {
+        "clients": 3,
+        "conversion_errors": 0,
+        "conversion_ms_average": 0.09351850562429706,
+        "conversion_ms_max": 1.960918,
+        "durability": "auto",
+        "encoded": 1778,
+        "encoded_bytes": 479697860,
+        "encoded_bytes_per_second_average": 2659352.9263926125,
+        "last_error": null,
+        "last_received_age_ms": 65.3905,
+        "received": 1778,
+        "received_hz_average": 9.85689096700591,
+        "reliability": "auto",
+        "snapshot_cached": true,
+        "throttled": 0,
+        "topic": "/sim/uav/points",
+        "type": "sensor_msgs/msg/PointCloud2"
+      }
+    ]
+  },
+  "rss_min_mb": 23.52734375,
+  "rss_max_mb": 26.1171875,
+  "ping_max_ms": 3.5073689998625923,
+  "ping_p95_ms": 1.2720249999347288,
+  "dds_subscription_count_verified": 1,
+  "baseline_passed": true,
+  "error_recovery_passed": true,
+  "filtering_passed": true,
+  "rate_limit_passed": true,
+  "all_streams_released": true
+}

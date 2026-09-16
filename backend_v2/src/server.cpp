@@ -1,4 +1,5 @@
 #include "rvizweb/server.hpp"
+#include "rvizweb/pointcloud_processing.hpp"
 #include "rvizweb/control.hpp"
 #include <regex>
 #include <boost/asio.hpp>
@@ -128,6 +129,10 @@ class Session : public std::enable_shared_from_this<Session> {
         return respond(adapter_->ready() ? http::status::ok : http::status::service_unavailable, body);
       }
       if (request.target() == "/api/v2/ros/capabilities") return respond(http::status::ok, capabilities(adapter_->middleware()));
+      if (request.target() == "/api/v2/ros/metrics") {
+        body = adapter_->metrics(); body["pointcloud_processing"] = point_options().json_value();
+        return respond(http::status::ok, body);
+      }
       if (request.target() == "/api/v2/ros/topics") {
         body["topics"] = adapter_->topics();
         return respond(http::status::ok, body);
@@ -183,7 +188,12 @@ class Session : public std::enable_shared_from_this<Session> {
       else if (method == "topics.advertise" || method == "topics.unadvertise" || method == "topics.publish") {
         return control_request(request, response);
       }
+      else if (method == "streams.stats") {
+        result = adapter_->metrics(); result["pointcloud_processing"] = point_options().json_value();
+      }
       else if (method == "session.stats") {
+        result["queue"] = outbox_.stats();
+        result["sent"] = sent_;
         result["dropped_frames"] = Json::UInt64(outbox_.dropped());
         result["subscriptions"] = Json::UInt64(subscriptions_.size());
         result["publishers"] = Json::UInt64(publishers_.size());
@@ -202,6 +212,7 @@ class Session : public std::enable_shared_from_this<Session> {
             found->second.active->store(false);
             subscriptions_.erase(found);
             outbox_.erase(topic);
+            sent_.removeMember(topic);
           }
         } else {
           if (!params["type"].isString()) throw std::invalid_argument("type must be a canonical message type");
@@ -387,6 +398,11 @@ class Session : public std::enable_shared_from_this<Session> {
     socket_.async_write(net::buffer(writing_->bytes),
       [self = shared_from_this()](beast::error_code error, std::size_t) {
         self->write_timer_.cancel();
+        if (!error && self->subscriptions_.count(self->writing_->topic)) {
+          auto& stats = self->sent_[self->writing_->topic];
+          stats["frames"] = stats.get("frames", Json::UInt64(0)).asUInt64() + Json::UInt64(1);
+          stats["bytes"] = stats.get("bytes", Json::UInt64(0)).asUInt64() + Json::UInt64(self->writing_->bytes.size());
+        }
         self->writing_.reset();
         if (error) return self->stop();
         self->write();
@@ -400,6 +416,7 @@ class Session : public std::enable_shared_from_this<Session> {
   http::request_parser<http::string_body> parser_;
   beast::flat_buffer input_;
   Outbox outbox_;
+  Json::Value sent_{Json::objectValue};
   FramePtr writing_;
   std::map<std::string, Subscription> subscriptions_;
   std::map<std::string, PublisherEntry> publishers_;

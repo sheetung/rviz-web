@@ -1,4 +1,4 @@
-# 原生 ROS 后端 v2 · 第四阶段（本地部署）
+# 原生 ROS 后端 v2 · 第五阶段（性能与诊断）
 
 C++17 直接使用 roscpp / rclcpp，FastAPI 独立管理配置和视频。当前正式入口使用 v2，已补齐显示、控制发布和连接恢复；v1 仅保留代码。
 
@@ -93,6 +93,7 @@ HTTP GET：
 - `/api/v2/ros/health`：ROS 就绪状态和能力。
 - `/api/v2/ros/capabilities`：协议版本、消息类型、限制和只读标志。
 - `/api/v2/ros/topics`：`{"topics":[...]}`，包含 `supported` 标志。
+- `/api/v2/ros/metrics`：共享流、转换/限频/错误计数及点云处理配置。
 
 WebSocket `/ws/v2/ros` 首条应用消息是 `{"version":2,"event":"hello","capabilities":{...}}`。
 
@@ -104,7 +105,7 @@ WebSocket `/ws/v2/ros` 首条应用消息是 `{"version":2,"event":"hello","capa
 {"version":2,"id":"subscribe-1","ok":true,"result":{"topic":"/points"}}
 ```
 
-方法：`ping`、`capabilities`、`topics.list`、`topics.subscribe`、`topics.unsubscribe`、`session.stats`。退订 params 仅需 topic。失败返回同一 id、`ok:false` 和 `error.code/message`。
+方法：`ping`、`capabilities`、`topics.list`、`topics.subscribe`、`topics.unsubscribe`、`session.stats`、`streams.stats`。退订 params 仅需 topic。失败返回同一 id、`ok:false` 和 `error.code/message`。
 
 Odometry 数据为 `{"version":2,"event":"topic.message","topic":"/odom","type":"nav_msgs/msg/Odometry","msg":{...}}`。PointCloud2 为 RVPC 二进制帧，元数据携带 `version:2`，兼容现有前端解码器。
 
@@ -139,6 +140,12 @@ ROS 1 改用 ros1 产物与 `--middleware ros1`。ROS 2 可用独立 `ROS_DOMAIN
 
 第三阶段已实现目标/初始位姿/Twist 发布、本地提交确认与连接恢复，详见 [第三阶段验收记录](../docs/backend-v2-stage3.md)。第四阶段的本地部署、源码发布包与回退见 [部署说明](../docs/backend-v2-stage4.md)；Docker 已搁置。图像等动态消息可读取字段，但本阶段未增加专用图像二进制协议。OccupancyGrid 当前为标准 JSON 数组，点云仍为 RVPC。
 
-动态消息限制：单条序列化输入 / 输出最多 16 MiB、最多 100 万字段值、嵌套深度 32；ROS1 消息定义最多 1 MiB。非有限浮点数传为 null。Marker 缓存每订阅最多 2048 项 / 8 MiB，TF 最多 1024 个子坐标系 / 8 MiB。达到转换限制的消息跳过并记录服务日志；尚无前端转换错误通知。
+动态消息限制：单条序列化输入 / 输出最多 16 MiB、最多 100 万字段值、嵌套深度 32；ROS1 消息定义最多 1 MiB。非有限浮点数传为 null。Marker 缓存每订阅最多 2048 项 / 8 MiB，TF 最多 1024 个子坐标系 / 8 MiB。达到转换限制的消息跳过并计入转换错误；第五阶段通过 `topic.error` 和诊断接口暴露转换错误，前端尚无专用错误界面。
 
-当前每个客户端独立创建普通 ROS 订阅；仅 `/tf_static` 共享常驻订阅。ROS1 话题发现仍同步访问 Master。ROS2 本机地图性能、压力及停读客户端测试见 [性能报告](../docs/ros2-v1-v2-map-benchmark.md)。第二阶段没有重跑完整极限基准，真实网络、ROS1 性能和小时级稳定性仍未验证。
+第五阶段已将相同话题、类型和请求 QoS 的普通订阅与编码共享；每客户端发送队列仍隔离，`/tf_static` 保留共享常驻订阅。ROS1 话题发现仍同步访问 Master。ROS2 本机地图性能、压力及停读客户端测试见 [性能报告](../docs/ros2-v1-v2-map-benchmark.md)。第二阶段没有重跑完整极限基准，真实网络、ROS1 性能和小时级稳定性仍未验证。
+
+## 第五阶段
+
+相同请求共享订阅和不可变编码帧；新增 `/api/v2/ros/metrics`、`streams.stats` 和会话队列/发送统计。转换错误通过限频的 `topic.error` 及指标公开。点云可通过环境变量选择限频、裁剪与保留原始字段的体素采样，默认关闭，无需前端改动。
+
+配置、资源限制、测试命令及验证边界见 [第五阶段说明](../docs/backend-v2-stage5.md)。

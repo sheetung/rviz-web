@@ -3,6 +3,8 @@
 #include <geometry_msgs/msg/twist.hpp>
 #include "rvizweb/adapter.hpp"
 #include "rvizweb/messages.hpp"
+#include "rvizweb/conversion.hpp"
+#include "rvizweb/pointcloud_processing.hpp"
 #include "rvizweb/control.hpp"
 #include "rvizweb/display.hpp"
 #include "rvizweb/ros2_dynamic.hpp"
@@ -115,16 +117,16 @@ class Ros2Adapter final : public RosAdapter {
       })) qos.reliable();
     }
     if (type == "sensor_msgs/msg/PointCloud2") {
+      auto encoder = std::make_shared<PointEncoder>();
       return node_->create_subscription<sensor_msgs::msg::PointCloud2>(topic, qos,
-        [sink, topic](sensor_msgs::msg::PointCloud2::ConstSharedPtr m) {
-          try { sink(pointcloud(*m, topic, stamp(m->header.stamp.sec, m->header.stamp.nanosec))); }
-          catch (const std::exception& e) { std::cerr << "PointCloud2 skipped: " << e.what() << '\n'; }
+        [sink, topic, encoder](sensor_msgs::msg::PointCloud2::ConstSharedPtr m) {
+          sink(converted(topic, [&] { return encoder->encode(*m, topic, stamp(m->header.stamp.sec, m->header.stamp.nanosec)); }));
         });
     }
     if (type == "nav_msgs/msg/Odometry") {
       return node_->create_subscription<nav_msgs::msg::Odometry>(topic, qos,
         [sink, topic](nav_msgs::msg::Odometry::ConstSharedPtr m) {
-          sink(odometry(*m, topic, stamp(m->header.stamp.sec, m->header.stamp.nanosec)));
+          sink(converted(topic, [&] { return odometry(*m, topic, stamp(m->header.stamp.sec, m->header.stamp.nanosec)); }));
         });
     }
     return generic(topic, type, qos, std::move(sink));
@@ -144,9 +146,8 @@ class Ros2Adapter final : public RosAdapter {
     auto decoder = std::make_shared<Ros2Dynamic>(type);
     auto encoder = std::make_shared<DisplayEncoder>(topic, type);
     return node_->create_generic_subscription(topic, type, qos,
-      [decoder, encoder, sink](std::shared_ptr<rclcpp::SerializedMessage> message) {
-        try { sink(encoder->encode(decoder->decode(*message))); }
-        catch (const std::exception& e) { std::cerr << "Display message skipped: " << e.what() << '\n'; }
+      [decoder, encoder, sink, topic](std::shared_ptr<rclcpp::SerializedMessage> message) {
+        sink(converted(topic, [&] { return encoder->encode(decoder->decode(*message)); }));
       });
   }
   std::shared_ptr<ReplayStream> static_stream_ = std::make_shared<ReplayStream>();

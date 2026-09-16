@@ -1,4 +1,6 @@
 #include "rvizweb/server.hpp"
+#include "rvizweb/shared_adapter.hpp"
+#include "rvizweb/pointcloud_processing.hpp"
 #include <boost/asio/signal_set.hpp>
 #include <iostream>
 #include <stdexcept>
@@ -26,12 +28,13 @@ int main(int argc, char** argv) {
       else if (arg == "--allow-origin") origins.emplace_back(argv[i]);
       else throw std::invalid_argument("Unknown option: " + arg);
     }
-    auto adapter = rvizweb::make_adapter();
+    rvizweb::point_options(); // Fail early on invalid process-wide processing options.
+    auto adapter = std::make_shared<rvizweb::SharedAdapter>(rvizweb::make_adapter());
     boost::asio::io_context io(1);
     boost::asio::signal_set signals(io, SIGINT, SIGTERM);
     signals.async_wait([&](auto, auto) { io.stop(); });
     rvizweb::listen(io, adapter, host, static_cast<uint16_t>(port), origins);
-    std::cout << "RVizWeb native 2.0.0-dev.4 " << adapter->middleware() << " listening on " << host << ':' << port << std::endl;
+    std::cout << "RVizWeb native 2.0.0-dev.5 " << adapter->middleware() << " listening on " << host << ':' << port << std::endl;
     io.run();
     adapter->stop();
   } catch (const std::exception& e) {

@@ -3,6 +3,8 @@
 #include <geometry_msgs/Twist.h>
 #include "rvizweb/adapter.hpp"
 #include "rvizweb/messages.hpp"
+#include "rvizweb/conversion.hpp"
+#include "rvizweb/pointcloud_processing.hpp"
 #include "rvizweb/control.hpp"
 #include "rvizweb/display.hpp"
 #include "rvizweb/ros1_dynamic.hpp"
@@ -86,17 +88,17 @@ class Ros1Adapter final : public RosAdapter {
     if (reliability != "auto" && reliability != "best_effort") throw std::invalid_argument("ROS1 does not expose DDS reliability");
     if (topic == "/tf_static" && type == "tf2_msgs/msg/TFMessage") return static_stream_->attach(std::move(sink));
     if (type == "sensor_msgs/msg/PointCloud2") {
+      auto encoder = std::make_shared<PointEncoder>();
       auto sub = node_->subscribe<sensor_msgs::PointCloud2>(topic, 1,
-        [sink, topic](const sensor_msgs::PointCloud2::ConstPtr& m) {
-          try { sink(pointcloud(*m, topic, stamp(m->header.stamp.sec, m->header.stamp.nsec))); }
-          catch (const std::exception& e) { std::cerr << "PointCloud2 skipped: " << e.what() << '\n'; }
+        [sink, topic, encoder](const sensor_msgs::PointCloud2::ConstPtr& m) {
+          sink(converted(topic, [&] { return encoder->encode(*m, topic, stamp(m->header.stamp.sec, m->header.stamp.nsec)); }));
         });
       return std::make_shared<ros::Subscriber>(std::move(sub));
     }
     if (type == "nav_msgs/msg/Odometry") {
       auto sub = node_->subscribe<nav_msgs::Odometry>(topic, 1,
         [sink, topic](const nav_msgs::Odometry::ConstPtr& m) {
-          sink(odometry(*m, topic, stamp(m->header.stamp.sec, m->header.stamp.nsec)));
+          sink(converted(topic, [&] { return odometry(*m, topic, stamp(m->header.stamp.sec, m->header.stamp.nsec)); }));
         });
       return std::make_shared<ros::Subscriber>(std::move(sub));
     }
@@ -116,8 +118,8 @@ class Ros1Adapter final : public RosAdapter {
     type.erase(type.find("/msg"), 4);
     const auto depth = type == "tf2_msgs/TFMessage" || type.find("visualization_msgs/") == 0 ? 100 : 1;
     auto sub = node_->subscribe<topic_tools::ShapeShifter>(topic, depth,
-      [encoder, sink, type, decoder = std::shared_ptr<Ros1Dynamic>{}, definition = std::string{}](const topic_tools::ShapeShifter::ConstPtr& message) mutable {
-        try {
+      [encoder, sink, type, topic, decoder = std::shared_ptr<Ros1Dynamic>{}, definition = std::string{}](const topic_tools::ShapeShifter::ConstPtr& message) mutable {
+        sink(converted(topic, [&] {
           if (message->getDataType() != type) throw std::invalid_argument("Publisher type differs from requested type");
           if (!decoder || definition != message->getMessageDefinition()) {
             definition = message->getMessageDefinition(); decoder = std::make_shared<Ros1Dynamic>(type, definition);
@@ -125,8 +127,8 @@ class Ros1Adapter final : public RosAdapter {
           if (message->size() > max_frame_bytes) throw std::length_error("Serialized message exceeds limit");
           std::vector<uint8_t> bytes(message->size());
           ros::serialization::OStream stream(bytes.data(), bytes.size()); message->write(stream);
-          sink(encoder->encode(decoder->decode(bytes)));
-        } catch (const std::exception& e) { std::cerr << "Display message skipped: " << e.what() << '\n'; }
+          return encoder->encode(decoder->decode(bytes));
+        }));
       });
     return std::make_shared<ros::Subscriber>(std::move(sub));
   }

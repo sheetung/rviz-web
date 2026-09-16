@@ -23,7 +23,7 @@ Json::Value parse(const std::string& text) {
   return result;
 }
 FramePtr text_frame(const Json::Value& value) {
-  return std::make_shared<Frame>(Frame{false, json(value)});
+  return std::make_shared<Frame>(Frame{false, json(value), {}});
 }
 FramePtr pointcloud_frame(Json::Value metadata, const std::vector<uint8_t>& data) {
   metadata["op"] = "publish"; // Existing RVPC decoder contract, not a rosbridge dependency.
@@ -39,7 +39,7 @@ FramePtr pointcloud_frame(Json::Value metadata, const std::vector<uint8_t>& data
   for (unsigned i = 0; i < 4; ++i) wire[8 + i] = static_cast<char>((header.size() >> (8 * i)) & 0xff);
   wire.replace(12, header.size(), header);
   if (!data.empty()) wire.append(reinterpret_cast<const char*>(data.data()), data.size());
-  return std::make_shared<Frame>(Frame{true, std::move(wire)});
+  return std::make_shared<Frame>(Frame{true, std::move(wire), {}});
 }
 bool supported_type(const std::string& type) {
   for (const auto* item : {"sensor_msgs/msg/PointCloud2", "nav_msgs/msg/Odometry", "tf2_msgs/msg/TFMessage",
@@ -50,9 +50,13 @@ bool supported_type(const std::string& type) {
 Json::Value capabilities(const std::string& middleware) {
   Json::Value value(Json::objectValue);
   value["protocol_version"] = 2;
-  value["backend_version"] = "2.0.0-dev.4";
+  value["backend_version"] = "2.0.0-dev.5";
   value["middleware"] = middleware;
-  value["stage"] = 4;
+  value["stage"] = 5;
+  value["shared_subscriptions"] = true;
+  value["max_shared_streams"] = 64;
+  value["pointcloud_processing_config"] = "environment";
+  value["topic_error_events"] = true;
   value["read_only"] = false;
   value["max_frame_bytes"] = Json::UInt64(max_frame_bytes);
   value["max_subscriptions"] = 32;
@@ -70,7 +74,7 @@ Json::Value capabilities(const std::string& middleware) {
   value["marker_snapshots"] = true;
   value["durability"].append("auto"); value["durability"].append("volatile");
   if (middleware == "ros2") value["durability"].append("transient_local");
-  for (const auto* method : {"ping", "capabilities", "topics.list", "topics.subscribe", "topics.unsubscribe", "topics.advertise", "topics.unadvertise", "topics.publish", "session.stats"})
+  for (const auto* method : {"ping", "capabilities", "topics.list", "topics.subscribe", "topics.unsubscribe", "topics.advertise", "topics.unadvertise", "topics.publish", "session.stats", "streams.stats"})
     value["methods"].append(method);
   value["reliability"].append("auto");
   if (middleware == "ros2") {
@@ -90,19 +94,20 @@ bool Outbox::data(const std::string& topic, FramePtr frame,
                   const std::shared_ptr<std::atomic_bool>& active) {
   std::lock_guard<std::mutex> lock(mutex_);
   if (!active->load()) return false;
-  if (frame->bytes.size() > max_frame_bytes) { ++dropped_; return false; }
+  if (frame->bytes.size() > max_frame_bytes) { ++dropped_; ++oversized_; ++topic_drops_[topic]; return false; }
   const auto old = data_.find(topic);
   if (old != data_.end()) {
     data_bytes_ -= old->second->bytes.size();
     data_.erase(old);
     order_.erase(std::find(order_.begin(), order_.end(), topic));
-    ++dropped_;
+    ++dropped_; ++replaced_; ++topic_drops_[topic];
   }
   while (!order_.empty() && (data_.size() >= 8 || data_bytes_ + frame->bytes.size() > 32 * 1024 * 1024)) {
+    ++topic_drops_[order_.front()];
     data_bytes_ -= data_.at(order_.front())->bytes.size();
     data_.erase(order_.front());
     order_.pop_front();
-    ++dropped_;
+    ++dropped_; ++evicted_;
   }
   data_bytes_ += frame->bytes.size();
   data_[topic] = std::move(frame);
@@ -127,6 +132,7 @@ FramePtr Outbox::pop() {
 }
 void Outbox::erase(const std::string& topic) {
   std::lock_guard<std::mutex> lock(mutex_);
+  topic_drops_.erase(topic);
   auto found = data_.find(topic);
   if (found == data_.end()) return;
   data_bytes_ -= found->second->bytes.size();
@@ -135,8 +141,21 @@ void Outbox::erase(const std::string& topic) {
 }
 void Outbox::clear() {
   std::lock_guard<std::mutex> lock(mutex_);
-  control_.clear(); data_.clear(); order_.clear();
+  control_.clear(); data_.clear(); order_.clear(); topic_drops_.clear();
   data_bytes_ = control_bytes_ = 0;
 }
 uint64_t Outbox::dropped() const { std::lock_guard<std::mutex> lock(mutex_); return dropped_; }
+Json::Value Outbox::stats() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  Json::Value j;
+  j["data_bytes"] = Json::UInt64(data_bytes_); j["control_bytes"] = Json::UInt64(control_bytes_);
+  j["data_topics"] = Json::UInt64(data_.size()); j["control_messages"] = Json::UInt64(control_.size());
+  j["replaced_frames"] = Json::UInt64(replaced_); j["evicted_frames"] = Json::UInt64(evicted_);
+  j["oversized_frames"] = Json::UInt64(oversized_);
+  j["dropped_by_topic"] = Json::Value(Json::objectValue);
+  for (const auto& item : topic_drops_) j["dropped_by_topic"][item.first] = Json::UInt64(item.second);
+  j["pending_bytes_by_topic"] = Json::Value(Json::objectValue);
+  for (const auto& item : data_) j["pending_bytes_by_topic"][item.first] = Json::UInt64(item.second->bytes.size());
+  return j;
+}
 }  // namespace rvizweb
