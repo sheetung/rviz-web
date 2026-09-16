@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.16)
+project(rvizweb_map_benchmark LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(sensor_msgs REQUIRED)
+add_executable(map_source map_source.cpp)
+ament_target_dependencies(map_source rclcpp sensor_msgs)

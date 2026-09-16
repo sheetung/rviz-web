@@ -73,3 +73,15 @@ test('discovers finite numeric fields in a PX4 local position message', () => {
   assert.ok(!fieldPaths.includes('ref_lat'))
   assert.ok(!fieldPaths.includes('vxy_max'))
 })
+
+
+test('extracts nested array aggregates and ignores nonfinite samples', async () => {
+  const { extractChartFieldValue } = await import('../src/utils/chartTopics.js')
+  const message = { sensor: { values: [1.25, -2.5, 42, null, NaN, Infinity] }, valid: true }
+  assert.equal(extractChartFieldValue(message, 'sensor.values_computed_min'), -2.5)
+  assert.equal(extractChartFieldValue(message, 'sensor.values_computed_max'), 42)
+  assert.equal(extractChartFieldValue(message, 'sensor.values_computed_avg'), 40.75 / 3)
+  assert.equal(extractChartFieldValue({ data: [null, NaN] }, 'data_computed_avg'), null)
+  assert.equal(extractChartFieldValue(message, 'valid'), 1)
+  assert.equal(extractChartFieldValue({ ranges: [null, 0, 2, Infinity], range_min: 0, range_max: 5 }, '_computed_avg_range'), 1)
+})

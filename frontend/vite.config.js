@@ -12,8 +12,12 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '..', '')
   const appPort = Number(env.APP_PORT || 3000)
   const rosWebSocketUrl = env.ROS_WS_URL ?? '/ws/ros2'
-  const backendPort = '8000'
+  const backendPort = env.RVIZWEB_MANAGEMENT_PORT || '8000'
+  const nativeTarget = env.ROS_V2_PROXY_TARGET || 'http://127.0.0.1:8082'
   const backendProxy = {
+    '/health': { target: `http://127.0.0.1:${backendPort}`, changeOrigin: true },
+    '/api/v2/ros': { target: nativeTarget, changeOrigin: false },
+    '/ws/v2/ros': { target: nativeTarget, ws: true, changeOrigin: false },
     '/ros1/api': { target: `http://127.0.0.1:${backendPort}`, changeOrigin: true },
     '/ros2/api': { target: `http://127.0.0.1:${backendPort}`, changeOrigin: true },
     '/api': {

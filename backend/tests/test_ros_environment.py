@@ -11,57 +11,44 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class RosEnvironmentTests(unittest.TestCase):
-    def test_install_selects_ros_dependencies_and_checks_imports(self):
-        for version, imports_ok in [('1', True), ('2', True), ('1', False)]:
-            with self.subTest(version=version, imports_ok=imports_ok), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
-                (root / 'backend/.venv').mkdir(parents=True)
-                (root / 'frontend').mkdir()
-                result = subprocess.run(
-                    ['bash', '-eu', '-c',
-                     'source "$1"; BACKEND_DIR="$2/backend"; FRONTEND_DIR="$2/frontend"; '
-                     'uv() { printf "uv:%s\\n" "$*"; }; '
-                     'npm() { echo npm-called; }; '
-                     'check_ros_python() { echo imports-checked; return "$IMPORT_RESULT"; }; '
-                     'install_dependencies',
-                     'bash', str(ROOT / 'install.sh'), str(root)],
-                    env={**os.environ, 'ROS_VERSION': version,
-                         'IMPORT_RESULT': '0' if imports_ok else '1'},
-                    capture_output=True, text=True,
-                )
-                self.assertEqual(result.returncode == 0, imports_ok, result.stderr)
-                self.assertEqual('--extra ros1' in result.stdout, version == '1')
-                self.assertIn('--frozen --no-dev', result.stdout)
-                self.assertIn('imports-checked', result.stdout)
-                self.assertEqual('npm-called' in result.stdout, imports_ok)
+    def test_management_install_is_independent_of_ros_python(self):
+        for version in ("1", "2"):
+            for imports_ok in (True, False):
+                with self.subTest(version=version, imports_ok=imports_ok), tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    (root / "backend").mkdir()
+                    (root / "frontend").mkdir()
+                    result = subprocess.run(
+                        ["bash", "-eu", "-c",
+                         'source "$1"; BACKEND_DIR="$2/backend"; FRONTEND_DIR="$2/frontend"; '
+                         'uv() { printf "uv:%s\\n" "$*"; }; '
+                         'npm() { echo npm-called; }; '
+                         'check_ros_python() { echo unexpected-ros-import; return 1; }; '
+                         'check_management_python() { return "$IMPORT_RESULT"; }; '
+                         'install_dependencies', "bash", str(ROOT / "install.sh"), str(root)],
+                        env={**os.environ, "ROS_VERSION": version, "ROS1_AUTOSTART_MASTER": "false",
+                             "IMPORT_RESULT": "0" if imports_ok else "1"},
+                        capture_output=True, text=True)
+                    self.assertEqual(result.returncode == 0, imports_ok, result.stderr)
+                    self.assertIn("venv --python >=3.10,<3.13 --system-site-packages .venv", result.stdout)
+                    self.assertIn("--frozen --no-dev", result.stdout)
+                    self.assertNotIn("--extra ros1", result.stdout)
+                    self.assertNotIn("unexpected-ros-import", result.stdout)
+                    self.assertEqual("npm-called" in result.stdout, imports_ok)
 
-    def test_new_ros2_venv_uses_ros_interpreter_and_fails_before_sync_if_unavailable(self):
-        for available in (True, False):
-            with self.subTest(available=available), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
-                (root / 'backend').mkdir()
-                (root / 'frontend').mkdir()
-                result = subprocess.run(
-                    ['bash', '-eu', '-c',
-                     'source "$1"; BACKEND_DIR="$2/backend"; FRONTEND_DIR="$2/frontend"; '
-                     'uv() { printf "uv:%s\\n" "$*"; }; '
-                     'npm() { echo npm-called; }; '
-                     'check_ros_python() { return 0; }; '
-                     'ros2_python_for_venv() { echo /ros2/python3; return "$PYTHON_RESULT"; }; '
-                     'install_dependencies',
-                     'bash', str(ROOT / 'install.sh'), str(root)],
-                    env={**os.environ, 'ROS_VERSION': '2',
-                         'PYTHON_RESULT': '0' if available else '1'},
-                    capture_output=True, text=True,
-                )
-                self.assertEqual(result.returncode == 0, available, result.stderr)
-                if available:
-                    self.assertIn('venv --python /ros2/python3 --system-site-packages .venv', result.stdout)
-                    self.assertIn('uv:sync', result.stdout)
-                    self.assertNotIn('--extra ros1', result.stdout)
-                else:
-                    self.assertNotIn('uv:', result.stdout)
-                    self.assertNotIn('npm-called', result.stdout)
+    def test_native_build_only_targets_selected_ros_version(self):
+        for version in ("1", "2"):
+            result = subprocess.run(
+                ["bash", "-eu", "-c",
+                 'cmake() { printf "%s\\n" "$*"; }; '
+                 'ctest() { printf "%s\\n" "$*"; }; export -f cmake ctest; bash "$1"',
+                 "bash", str(ROOT / "backend_v2/scripts/build.sh")],
+                env={**os.environ, "ROS_VERSION": version},
+                capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(f"-DROS_VERSION={version}", result.stdout)
+            self.assertIn(f"build/ros{version}", result.stdout)
+            self.assertNotIn(f"build/ros{3 - int(version)}", result.stdout)
 
     def test_ros2_import_check_ignores_ros1_master_settings(self):
         result = subprocess.run(

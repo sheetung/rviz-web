@@ -4,9 +4,10 @@
 """
 
 from typing import Optional
+from fastapi import HTTPException
 
 from ..core.config import get_settings
-from ..core.ros_runtime import selected_middleware
+from ..core.ros_runtime import selected_middleware, management_only
 from .connection_manager import ConnectionManager
 from .ros_gateway import RosGateway
 from .ros_contract import RosService
@@ -28,6 +29,8 @@ def _create_connection_manager(settings) -> ConnectionManager:
 
 def get_ros_service() -> RosService:
     """获取当前部署选择的 ROS 服务实现。"""
+    if management_only():
+        raise HTTPException(503, detail="ROS data is served by the native v2 service")
     global _ros_service
     if _ros_service is None:
         settings = get_settings()

@@ -16,7 +16,7 @@ export function useRosbridge() {
    * @param {string} messageType 消息类型
    * @param {Function} callback 消息回调函数
    */
-  const subscribe = (topic, messageType, callback) => {
+  const subscribe = (topic, messageType, callback, options = {}) => {
     debugLog(`[useRosbridge] 订阅请求: ${topic}, 连接状态: ${connectionStore.isConnected}`)
     
     if (!connectionStore.isConnected) {
@@ -24,7 +24,7 @@ export function useRosbridge() {
       return null
     }
     
-    const success = connectionStore.subscribeTopic(topic, messageType, callback)
+    const success = connectionStore.subscribeTopic(topic, messageType, callback, options)
     debugLog(`[useRosbridge] connectionStore.subscribeTopic返回:`, success)
     
     if (success) {

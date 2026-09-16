@@ -6,6 +6,8 @@
 
 在一个页面中查看三维点云、机器人位姿、实时曲线与视频，管理话题和任务配置。
 
+后端 v2 原生 C++ 已补齐控制与恢复，并提供第四阶段本地部署和源码包，支持 ROS 1 / ROS 2 的点云、里程计、TF、激光、路径、Marker、栅格和动态数值曲线，以及目标/初始位姿发布和断线恢复。见 [构建与启动说明](./backend_v2/README.md)；本地 `./start.sh` 固定启动 v2，v1 仅保留代码；Docker 部署暂时搁置，仅支持本地启动。已完成 [ROS 2 地图性能与极限测试](./docs/ros2-v1-v2-map-benchmark.md)。
+
 [中文](./README.md) | [English](./readme/README.en.md)
 
 [![GitHub Stars](https://img.shields.io/github/stars/sheetung/rviz-web?style=flat-square)](https://github.com/sheetung/rviz-web/stargazers)
@@ -30,7 +32,7 @@
 
 RVizWeb 是面向 ROS 的 Web 可视化工具，适用于机器人调试、无人机状态监控和算法演示。后端接入 ROS 网络，前端通过浏览器展示数据，查看端无需安装桌面可视化客户端。
 
-项目采用 **Vue 3 + Three.js** 构建交互界面与三维场景，使用 **FastAPI + rospy / rclpy** 接入 ROS1 / ROS2，通过 WebSocket 传输实时数据。交互沿用 RViz 风格的 Displays、Fixed Frame 和相机工具，并支持保存不同机器人与任务的 `.rvizweb` 配置。
+项目采用 **Vue 3 + Three.js** 构建交互界面与三维场景，使用 **C++ roscpp / rclcpp** 接入 ROS1 / ROS2，**FastAPI** 管理配置与视频，通过 WebSocket 传输实时数据。交互沿用 RViz 风格的 Displays、Fixed Frame 和相机工具，并支持保存不同机器人与任务的 `.rvizweb` 配置。
 
 > 已支持 ROS1 和 ROS2，每个后端实例固定运行一种 ROS 环境，不是 ROS1/ROS2 消息桥。自定义消息需安装并加载对应工作空间；ROS1 部署与验证边界见 [ROS1 指南](./docs/ros1-testing.md)。
 
@@ -85,9 +87,11 @@ ROS1 原生 `package/Type` 由适配器转换为上述统一格式。自动订�
 
 ## 快速开始
 
-ROS1 已提供独立适配器与部署配置，参见 [ROS1 部署与测试](docs/ros1-testing.md)。下面的默认示例使用 ROS2 Humble。每个后端实例只运行一种 ROS 环境，按 `ROS_WS_URL` 的版本后缀选择 `ROS1_SETUP_PATHS` 或 `ROS2_SETUP_PATHS`；浏览器可用 `/ws/ros1` 或 `/ws/ros2` 选择对应后端。
+ROS1 已提供独立适配器与部署配置，参见 [ROS1 部署与测试](docs/ros1-testing.md)。下面的默认示例使用 ROS2 Humble。每个后端实例只运行一种 ROS 环境，按 `ROS_WS_URL` 的版本后缀选择 `ROS1_SETUP_PATHS` 或 `ROS2_SETUP_PATHS`；这两个旧路径仅作为启动时的 ROS 版本选择值，网页数据统一走 `/ws/v2/ros`。
 
-### 方式一：本地运行
+### 本地运行
+
+安装和启动仅编译 `.env` 选中的 ROS 版本：`ROS_WS_URL=/ws/ros2` 只构建 ROS 2，`/ws/ros1` 只构建 ROS 1。只需安装所选版本的依赖，不要求同时安装两套 ROS。
 
 下面以 ROS2 为例；ROS1 配置见随后说明。
 
@@ -95,7 +99,8 @@ ROS1 已提供独立适配器与部署配置，参见 [ROS1 部署与测试](doc
 | --- | --- |
 | ROS 2 | 已安装并能发现目标话题；默认 setup 路径为 `/opt/ros/humble/setup.bash` |
 | Node.js / npm | 精确版本见 `.node-version` / `.npm-version`；安装脚本自动检查并安装到项目缓存 |
-| Python | 3.10–3.12，且可导入 ROS 2 的 `rclpy` |
+| Python | 3.10–3.12，仅用于管理服务，不要求导入 rospy/rclpy |
+| C++ 构建依赖 | C++17、CMake、Boost.System、JsonCpp 和所选 ROS 的开发包，见 [原生依赖](backend_v2/README.md#构建) |
 | uv | Python 环境管理；未安装时脚本会通过 curl 调用官方安装脚本 |
 | FFmpeg | 用于 RTSP 转流；同步依赖时脚本会检查，缺失时尝试通过系统包管理器安装 |
 
@@ -138,35 +143,17 @@ ROS_IP=192.168.1.100
 APP_HOST=0.0.0.0
 ```
 
-地址分别替换为 Master 和本机局域网 IP。后端仍要求 Python 3.10–3.12 且能导入 ROS1 包，不能直接使用 Noetic 默认 Python 3.8；不满足时使用下面的独立 ROS1 容器。每次部署固定一种环境，更换环境需重新准备匹配的虚拟环境。
+地址分别替换为 Master 和本机局域网 IP。C++ 后端使用对应 ROS 开发包；管理服务独立使用 Python 3.10–3.12，不要求与 ROS Python 版本一致。自动启动 ROS1 Master 和 Python 模拟数据脚本另需对应 Python ROS 依赖。
 
-### 方式二：Docker Compose
+### Docker 状态
 
-适用于安装了 Docker Engine 和 Compose 的 Linux 主机。在克隆仓库并准备好 `.env` 后执行：
+**Docker 部署暂时搁置，本版本仅支持本地部署，不提供 Docker 部署方法。** 仓库中的 Dockerfile / Compose 文件属于历史实现，尚未迁移到 v2，不能用于当前版本部署。
 
-```bash
-docker compose up -d --build
-docker compose ps
-docker compose logs -f
-```
+本地升级、源码发布包、配置兼容与回退步骤见 [第四阶段部署说明](docs/backend-v2-stage4.md)。
 
-浏览器打开 **http://localhost:3000/**。容器使用宿主机网络接入 ROS 2 DDS，配置目录 `rvizweb_configs/` 持久化挂载到容器中。
+## 无人机雷达模拟
 
-- 容器基于 ROS 2 Humble，自定义消息需在 `Dockerfile` 中额外安装或构建。
-- Compose 使用 `network_mode: host`，Docker Desktop 的 DDS 发现需单独配置和验证。
-- 容器内 Nginx 监听 `3000` 端口；本地启动的 `APP_HOST` / `APP_PORT` 不控制容器监听地址。
-- 停止服务：`docker compose down`；更新代码后重新执行构建启动命令。
-
-> **访问范围：** 应用未提供登录鉴权，请在可信局域网、VPN 或防火墙保护下使用，勿将服务端口直接暴露到公网。ROS 发布默认仅允许 `/goal_pose`、`/initialpose` 和 `/cmd_vel`，其他话题需在 `.env` 中显式加入发布白名单。
-
-ROS1 使用独立 Compose：在 `.env` 设置 `ROS_MASTER_URI` 和本机 `ROS_IP`，启动已有 Master 后执行：
-
-```bash
-docker compose -f docker-compose.ros1.yml up -d --build
-docker compose -f docker-compose.ros1.yml logs -f
-```
-
-ROS1 镜像使用 Ubuntu 22.04 原生 ROS1 1.15 与 Python 3.10。默认同样访问 `http://本机IP:3000`；不要与 ROS2 Compose 同机同时占用默认端口。停止时使用 `docker compose -f docker-compose.ros1.yml down`。容器构建及目标网络仍需按 [ROS1 测试指南](./docs/ros1-testing.md) 验收。
+已有 local_data 测试数据时，运行 `./scripts/simulate-uav.sh` 可在真实点云地图中无限巡航，支持 /goal_pose 更新目标并实时生成雷达扫描、里程计和 TF。网页读取 `sim-uav-outdoor.rvizweb` 即可查看。[操作与参数说明](docs/uav-simulator.md)。
 
 ## 使用说明
 
@@ -197,7 +184,7 @@ RVIZWEB_CONFIG=default.rvizweb ./start.sh local
 
 ```text
 rviz-web/
-├── backend/             # FastAPI、rclpy、配置与视频服务
+├── backend/             # FastAPI 配置与视频服务，保留 v1 代码
 ├── frontend/            # Vue 3、Three.js、Displays 与数据面板
 ├── docker/              # Nginx 与容器启动配置
 ├── docs/                # 使用指南与测试记录
@@ -205,7 +192,7 @@ rviz-web/
 ├── readme/              # README 多语言文档
 ├── rvizweb_configs/     # 可保存和复用的工作区配置
 ├── .env.example         # 环境变量示例
-├── docker-compose.yml   # Docker Compose 部署入口
+├── docker-compose.yml   # 历史文件，Docker 部署已搁置
 ├── install.sh           # 依赖安装与同步
 ├── start.sh             # 本地与开发启动入口
 └── release.sh           # 前后端独立版本发布
@@ -250,7 +237,7 @@ uv run python -m compileall -q app
 
 后续计划：
 
-- 完善 ROS1 / ROS2 实机网络、容器及长时间多客户端验证。
+- 完善 ROS1 / ROS2 实机网络及长时间多客户端验证；Docker 暂时搁置。
 - 完善 TF 过去 / 未来外推错误状态与 Display 生命周期覆盖。
 - 增加 WebSocket 重连和真实 ROS 2 图的自动化集成测试。
 - 清理历史布局与示例组件，降低维护成本。

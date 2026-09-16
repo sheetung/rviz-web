@@ -12,8 +12,7 @@ export const initializeTheme = async () => {
   const browserLocation = typeof window === 'undefined' ? null : window.location
   const apiBaseUrl = createApiBaseUrl(
     browserLocation,
-    import.meta.env.VITE_BACKEND_PUBLIC_URL,
-    import.meta.env.ROS_WS_URL
+    import.meta.env.VITE_BACKEND_PUBLIC_URL
   )
   const cacheKey = `rvizweb-theme:${apiBaseUrl}:${configName}`
   const cachedTheme = localStorage.getItem(cacheKey)

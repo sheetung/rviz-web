@@ -10,3 +10,8 @@ def selected_middleware():
             "Source ROS1_SETUP_PATHS / ROS2_SETUP_PATHS first: ROS_VERSION must be provided by the ROS environment"
         )
     return f"ros{version}"
+
+
+def management_only():
+    """V2 keeps FastAPI independent of any sourced ROS installation."""
+    return os.environ.get("RVIZWEB_ROS_BACKEND", "v1") == "v2"

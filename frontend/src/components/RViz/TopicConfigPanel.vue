@@ -489,6 +489,7 @@
 import { computed, ref, onMounted, watch } from 'vue'
 import { Plus, CopyDocument, Delete, View, Hide } from '@element-plus/icons-vue'
 import { useRosbridge } from '../../composables/useRosbridge'
+import { useConnectionStore } from '../../composables/useConnectionStore'
 import { getThemeColor } from '../../utils/theme'
 import { rosApi } from '../../services/api'
 import { ROS_TOPICS } from '../../config/rosTopics'
@@ -662,7 +663,10 @@ export default {
       if (isLoadingTopics.value) return
       isLoadingTopics.value = true
       try {
-        const topicList = await rosApi.getTopics()
+        const connection = useConnectionStore()
+        const topicList = connection.backendMode === 'v2'
+          ? (connection.isConnected ? await connection.getTopics() : [])
+          : await rosApi.getTopics()
         availableTopics.value = normalizeTopicList(topicList)
       } catch (error) {
         console.warn('HTTP 加载主题列表失败，回退到 websocket:', error)

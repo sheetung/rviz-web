@@ -13,6 +13,7 @@
       >
         <el-icon><Connection /></el-icon>
         {{ connectionStore.connectionStatusText }}
+        <span v-if="connectionStore.backendMode === 'v2'"> · v2{{ connectionStore.capabilities?.read_only ? ' 只读' : '' }}</span>
         <el-icon class="details-arrow" :class="{ open: showDetails }"><ArrowDown /></el-icon>
       </el-button>
     </el-badge>
@@ -36,7 +37,7 @@
 
         <div class="version-meta" aria-label="版本信息">
           <span>前端 v{{ frontendVersion }}</span>
-          <span>后端 v{{ backendVersion }}</span>
+          <span>后端 v{{ connectionStore.capabilities?.backend_version || backendVersion }}</span>
         </div>
 
         <div v-if="connectionStore.subscribedTopics.length > 0" class="subscribed-topics">
@@ -121,8 +122,7 @@ export default {
     }
 
     const reconnect = () => {
-      connectionStore.disconnect()
-      connectionStore.connect()
+      connectionStore.reconnect()
     }
 
     const fetchBackendVersion = async () => {

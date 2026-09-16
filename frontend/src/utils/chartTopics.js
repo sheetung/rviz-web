@@ -123,3 +123,26 @@ export const parseNumericMessageFields = (
 
   return fields
 }
+
+// Resolve arrays before converting ordinary fields to scalar chart values.
+export const extractChartFieldValue = (message, fieldPath) => {
+  const resolve = path => path.split('.').reduce((value, key) => value?.[key], message)
+  const range = /^_computed_(min|max|avg)_range$/.exec(fieldPath)
+  const aggregate = /^(.*)_computed_(min|max|avg)$/.exec(fieldPath)
+  if (range || aggregate) {
+    const values = range ? message.ranges : resolve(aggregate[1])
+    if (!Array.isArray(values)) return null
+    const numbers = values.filter(value => Number.isFinite(value) && (!range ||
+      (value >= (message.range_min ?? 0) && value <= (message.range_max ?? Infinity))))
+    if (!numbers.length) return null
+    const operation = range ? range[1] : aggregate[2]
+    if (operation === 'min') return numbers.reduce((a, b) => Math.min(a, b))
+    if (operation === 'max') return numbers.reduce((a, b) => Math.max(a, b))
+    return numbers.reduce((a, b) => a + b, 0) / numbers.length
+  }
+  const value = resolve(fieldPath)
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  if (typeof value === 'boolean') return value ? 1 : 0
+  if (Array.isArray(value) || typeof value === 'string') return value.length
+  return value && typeof value === 'object' ? Object.keys(value).length : null
+}

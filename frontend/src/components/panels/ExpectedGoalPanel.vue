@@ -55,7 +55,7 @@
     <div class="goal-actions">
       <el-button size="small" @click="resetGoal">重置</el-button>
       <el-button size="small" @click="previewGoal">展示</el-button>
-      <el-button size="small" type="primary" @click="publishGoal">
+      <el-button size="small" type="primary" :disabled="readOnly" :loading="publishing" @click="publishGoal">
         发布
       </el-button>
     </div>
@@ -82,6 +82,8 @@ const normalizeGoal = (goal) => ({
 export default {
   name: 'ExpectedGoalPanel',
   props: {
+    readOnly: { type: Boolean, default: false },
+    publishing: { type: Boolean, default: false },
     goal: {
       type: Object,
       default: () => createDefaultGoal()
@@ -114,6 +116,7 @@ export default {
     }
 
     const publishGoal = () => {
+      if (props.readOnly || props.publishing) return
       emit('goal-publish', normalizedGoal.value)
     }
 

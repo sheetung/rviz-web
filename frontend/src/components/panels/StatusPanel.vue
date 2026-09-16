@@ -168,10 +168,10 @@ export default {
 
     const updateSystemMetrics = (statusData = {}) => {
       if (statusData.cpu_usage !== undefined) {
-        systemData.value.cpuUsage = toNumber(statusData.cpu_usage)
+        systemData.value.cpuUsage = statusData.cpu_usage === null ? null : toNumber(statusData.cpu_usage, null)
       }
       if (statusData.memory_usage !== undefined) {
-        systemData.value.memUsage = toNumber(statusData.memory_usage)
+        systemData.value.memUsage = statusData.memory_usage === null ? null : toNumber(statusData.memory_usage, null)
       }
       if (statusData.mem_usage !== undefined) {
         systemData.value.memUsage = toNumber(statusData.mem_usage)
@@ -202,7 +202,7 @@ export default {
         const statusData = await connectionStore.getSystemStatus()
         if (statusData) updateSystemMetrics(statusData)
       } catch (error) {
-        console.warn('Failed to fetch system status through WebSocket:', error)
+        console.warn('Failed to fetch system status:', error)
       }
     }
     

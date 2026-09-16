@@ -340,6 +340,7 @@ import { useRosbridge } from '../../composables/useRosbridge'
 import { systemMessage } from '../../composables/useSystemMessage'
 import {
   formatYAxisTick,
+  extractChartFieldValue,
   getTopicFrequencyState,
   parseNumericMessageFields,
   supportsDynamicChartFields
@@ -1513,91 +1514,7 @@ export default {
       }
     }
 
-    // 提取字段值
-    const extractFieldValue = (message, fieldPath) => {
-      if (fieldPath.startsWith('_computed_')) {
-        // 特殊计算字段
-        switch (fieldPath) {
-          case '_computed_min_range':
-            if (message.ranges && Array.isArray(message.ranges)) {
-              const validRanges = message.ranges.filter(r => r > (message.range_min || 0) && r < (message.range_max || 100))
-              return validRanges.length > 0 ? Math.min(...validRanges) : 0
-            }
-            return 0
-          case '_computed_max_range':
-            if (message.ranges && Array.isArray(message.ranges)) {
-              const validRanges = message.ranges.filter(r => r > (message.range_min || 0) && r < (message.range_max || 100))
-              return validRanges.length > 0 ? Math.max(...validRanges) : 0
-            }
-            return 0
-          case '_computed_avg_range':
-            if (message.ranges && Array.isArray(message.ranges)) {
-              const validRanges = message.ranges.filter(r => r > (message.range_min || 0) && r < (message.range_max || 100))
-              return validRanges.length > 0 ? validRanges.reduce((a, b) => a + b, 0) / validRanges.length : 0
-            }
-            return 0
-          default:
-            // 处理动态解析的计算字段
-            if (fieldPath.includes('_computed_min')) {
-              const arrayPath = fieldPath.replace('_computed_min', '')
-              const array = getNestedValue(message, arrayPath)
-              if (Array.isArray(array) && array.length > 0) {
-                return Math.min(...array.filter(v => typeof v === 'number'))
-              }
-            } else if (fieldPath.includes('_computed_max')) {
-              const arrayPath = fieldPath.replace('_computed_max', '')
-              const array = getNestedValue(message, arrayPath)
-              if (Array.isArray(array) && array.length > 0) {
-                return Math.max(...array.filter(v => typeof v === 'number'))
-              }
-            } else if (fieldPath.includes('_computed_avg')) {
-              const arrayPath = fieldPath.replace('_computed_avg', '')
-              const array = getNestedValue(message, arrayPath)
-              if (Array.isArray(array) && array.length > 0) {
-                const numbers = array.filter(v => typeof v === 'number')
-                return numbers.length > 0 ? numbers.reduce((a, b) => a + b, 0) / numbers.length : 0
-              }
-            }
-            return 0
-        }
-      }
-
-      // 普通字段路径
-      return getNestedValue(message, fieldPath)
-    }
-
-    // 获取嵌套对象的值
-    const getNestedValue = (obj, path) => {
-      const parts = path.split('.')
-      let value = obj
-
-      for (const part of parts) {
-        if (value && typeof value === 'object') {
-          if (part in value) {
-            value = value[part]
-          } else {
-            return null
-          }
-        } else {
-          return null
-        }
-      }
-
-      // 处理不同类型的返回值
-      if (typeof value === 'number') {
-        return value
-      } else if (typeof value === 'boolean') {
-        return value ? 1 : 0  // 将布尔值转换为数值
-      } else if (Array.isArray(value)) {
-        return value.length  // 返回数组长度
-      } else if (typeof value === 'string') {
-        return value.length  // 返回字符串长度
-      } else if (value && typeof value === 'object') {
-        return Object.keys(value).length  // 返回对象属性数量
-      }
-      
-      return null
-    }
+    const extractFieldValue = extractChartFieldValue
 
     // 更新topic频率检测
     const updateTopicFrequency = (topicName) => {

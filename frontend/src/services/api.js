@@ -4,15 +4,16 @@
  */
 
 import axios from 'axios'
-import { createApiBaseUrl } from '../utils/websocketUrl'
+import { selectedBackend } from './rosTransport.js'
+import { createApiBaseUrl } from '../utils/websocketUrl.js'
 
 // 创建 axios 实例
 const browserLocation = typeof window === 'undefined' ? null : window.location
 const api = axios.create({
   baseURL: createApiBaseUrl(
     browserLocation,
-    import.meta.env.VITE_BACKEND_PUBLIC_URL,
-    import.meta.env.ROS_WS_URL
+    import.meta.env?.VITE_BACKEND_PUBLIC_URL,
+    selectedBackend() === 'v2' ? '' : import.meta.env?.ROS_WS_URL
   ),
   timeout: 10000,
   headers: {
@@ -74,7 +75,8 @@ export const rosApi = {
 }
 
 export const appApi = {
-  getVersion: () => api.get('/version')
+  getVersion: () => api.get('/version'),
+  getSystemStatus: () => api.get('/system/status')
 }
 
 /**

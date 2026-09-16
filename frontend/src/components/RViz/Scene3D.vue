@@ -1629,6 +1629,7 @@ export default {
     }
 
     const subscribeToTfTopics = () => {
+      if (connectionStore.backendMode === 'v2' && !connectionStore.capabilities?.message_types?.includes('tf2_msgs/msg/TFMessage')) return
       subscribeToRosTopic('/tf', 'tf2_msgs/msg/TFMessage')
       subscribeToRosTopic('/tf_static', 'tf2_msgs/msg/TFMessage')
     }
@@ -1694,12 +1695,13 @@ export default {
           case 'visualization_msgs/msg/Marker':
           case 'visualization_msgs/Marker':
             debugLog(`[Scene3D] 🔄 处理标记消息...`)
-            updateMarker(topic, message)
+            if (message._displaySnapshot) updateMarkerArray(topic, { markers: message._displaySnapshot })
+            else updateMarker(topic, message)
             break
           case 'visualization_msgs/msg/MarkerArray':
           case 'visualization_msgs/MarkerArray':
             debugLog(`[Scene3D] 🔄 处理标记数组消息...`)
-            updateMarkerArray(topic, message)
+            updateMarkerArray(topic, message._displaySnapshot ? { markers: message._displaySnapshot } : message)
             break
           case 'nav_msgs/msg/Path':
           case 'nav_msgs/Path':
@@ -2394,8 +2396,8 @@ export default {
       try {
         // 解析激光雷达数据
         if (ranges && Array.isArray(ranges) && ranges.length > 0) {
-          const angleMin = angle_min || -Math.PI
-          const angleMax = angle_max || Math.PI
+          const angleMin = angle_min ?? -Math.PI
+          const angleMax = angle_max ?? Math.PI
           const angleIncrement = angle_increment || (angleMax - angleMin) / ranges.length
           const rangeMin = range_min || 0.0
           const rangeMax = range_max || 100.0
@@ -2442,7 +2444,7 @@ export default {
             const range = ranges[i]
 
             // 过滤有效距离值
-            if (range >= rangeMin && range <= rangeMax && isFinite(range)) {
+            if (range >= rangeMin && range <= rangeMax && Number.isFinite(range)) {
               // 极坐标转笛卡尔坐标 - 完全按照flask_ros/map-2d.js的drawLaserScan实现
               // 第730-736行的核心逻辑：
               //
@@ -2509,7 +2511,7 @@ export default {
             const validAngles = []
             for (let i = 0; i < ranges.length; i++) {
               const range = ranges[i]
-              if (range >= rangeMin && range <= rangeMax && isFinite(range)) {
+              if (range >= rangeMin && range <= rangeMax && Number.isFinite(range)) {
                 const angle = angleMin + i * angleIncrement
                 validAngles.push(angle * 180 / Math.PI)
               }
@@ -3209,6 +3211,7 @@ export default {
 
     // 启动消息验证
     const startMessageVerification = () => {
+      if (connectionStore.backendMode === 'v2') return
       debugLog('[Verification] 启动消息验证系统')
 
       if (ROS_TOPICS.expectedControl) {
@@ -3418,6 +3421,10 @@ export default {
     }
 
     const setNavigationTool = (tool) => {
+      if (connectionStore.backendMode === 'v2' && connectionStore.capabilities?.read_only !== false && ['2d_goal', '2d_pose'].includes(tool)) {
+        systemMessage.warning('当前 v2 服务仅支持只读显示')
+        return
+      }
       navigationPointer.cancel()
       const touchInput = shouldUseNonTypingSelect()
       const nextTool = tool === 'none' ? 'move' : tool
@@ -3601,6 +3608,8 @@ export default {
         }
       }
 
+      if (connectionStore.backendMode === 'v2') delete goalMsg.header.stamp
+
       debugLog('[Navigation] 发布2D目标点消息:', JSON.stringify(goalMsg, null, 2))
 
       try {
@@ -3615,7 +3624,7 @@ export default {
           const yawDegrees = (Math.atan2(2 * (orientation.w * orientation.z + orientation.x * orientation.y),
                                          1 - 2 * (orientation.y * orientation.y + orientation.z * orientation.z)) * 180 / Math.PI).toFixed(1)
           debugLog(`[Navigation] ✅ 目标点发布成功: (${position.x.toFixed(2)}, ${position.y.toFixed(2)}) 方向: ${yawDegrees}°`)
-          systemMessage.success(`已设置目标点: (${position.x.toFixed(2)}, ${position.y.toFixed(2)}) 方向: ${yawDegrees}°`)
+          systemMessage.success(`已提交目标点到 ROS: (${position.x.toFixed(2)}, ${position.y.toFixed(2)}) 方向: ${yawDegrees}°`)
 
           // 额外验证：订阅目标话题来验证消息是否真的发送了
           debugLog('[Navigation] 尝试验证消息发送...')
@@ -3714,6 +3723,8 @@ export default {
         }
       }
 
+      if (connectionStore.backendMode === 'v2') delete poseMsg.header.stamp
+
       debugLog('[Navigation] 发布2D位置估计消息:', JSON.stringify(poseMsg, null, 2))
 
       try {
@@ -3728,7 +3739,7 @@ export default {
           const yawDegrees = (Math.atan2(2 * (orientation.w * orientation.z + orientation.x * orientation.y),
                                          1 - 2 * (orientation.y * orientation.y + orientation.z * orientation.z)) * 180 / Math.PI).toFixed(1)
           debugLog(`[Navigation] ✅ 位置估计发布成功: (${position.x.toFixed(2)}, ${position.y.toFixed(2)}) 方向: ${yawDegrees}°`)
-          systemMessage.success(`已设置位置估计: (${position.x.toFixed(2)}, ${position.y.toFixed(2)}) 方向: ${yawDegrees}°`)
+          systemMessage.success(`已提交位置估计到 ROS: (${position.x.toFixed(2)}, ${position.y.toFixed(2)}) 方向: ${yawDegrees}°`)
           return true
         } else {
           throw new Error('发布函数返回false')

@@ -13,10 +13,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .api.v1 import configs, ros, video
+from .api.v1 import configs, ros, video, system
 from .core.config import get_settings
 from .core.security import origin_is_allowed
 from .core.version import BACKEND_VERSION
+from .core.ros_runtime import management_only
 from .services.dependencies import get_ros_gateway, get_ros_service
 
 # 配置日志
@@ -31,6 +32,13 @@ DOCS_ASSETS_DIR = Path(__file__).resolve().parent / "static" / "swagger-ui"
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     logger.info("Starting RViz Web Visualization System")
+    if management_only():
+        logger.info("Management-only mode; ROS is handled by the native v2 service")
+        try:
+            yield
+        finally:
+            await video.shutdown_video_streams()
+        return
     service = get_ros_service()
     gateway = get_ros_gateway()
     try:
@@ -118,6 +126,7 @@ async def openapi_schema():
 # 注册 API 路由
 app.include_router(ros.router, prefix="/api/v1", tags=["ROS"])
 app.include_router(configs.router, prefix="/api/v1", tags=["Configs"])
+app.include_router(system.router, prefix="/api/v1", tags=["System"])
 app.include_router(video.router, prefix="/api/v1", tags=["Video"])
 
 
@@ -153,6 +162,8 @@ async def root():
 @app.get("/health")
 async def health_check():
     """健康检查"""
+    if management_only():
+        return {"status": "healthy", "service": "rvizweb-management", "version": BACKEND_VERSION, "ros_backend": "v2"}
     service = get_ros_service()
     if service.middleware == "ros1":
         try:
@@ -180,7 +191,7 @@ async def version_info():
     """返回后端版本。"""
     return {
         "version": BACKEND_VERSION,
-        "middleware": get_ros_service().middleware,
+        "middleware": "external" if management_only() else get_ros_service().middleware,
         "protocol_version": 1,
     }
 
@@ -190,7 +201,7 @@ async def version_info():
 async def middleware_version_info():
     return {
         "version": BACKEND_VERSION,
-        "middleware": get_ros_service().middleware,
+        "middleware": "external" if management_only() else get_ros_service().middleware,
         "protocol_version": 1,
     }
 
@@ -198,7 +209,10 @@ async def middleware_version_info():
 @app.websocket("/ws")
 @app.websocket("/ws/{middleware}")
 async def websocket_endpoint(websocket: WebSocket, middleware: str = ""):
-    """WebSocket 端点 - Rosbridge 协议"""
+    """Legacy data endpoint; v2 data connections go directly to C++."""
+    if management_only():
+        await websocket.close(code=4404, reason="Use /ws/v2/ros on the native service")
+        return
     if not origin_is_allowed(websocket.headers.get("origin"), settings):
         await websocket.close(code=4403, reason="Origin not allowed")
         return

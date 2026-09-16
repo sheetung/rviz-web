@@ -9,11 +9,13 @@ FRONTEND_DIR="$PROJECT_ROOT/frontend"
 LOG_DIR="$PROJECT_ROOT/logs"
 ENV_FILE="$PROJECT_ROOT/.env"
 BACKEND_PID=""
+NATIVE_PID=""
 FRONTEND_PID=""
 ROS_MASTER_PID=""
 LOG_RUN_DIR=""
 START_LOG_FILE=""
 BACKEND_LOG_FILE=""
+NATIVE_LOG_FILE=""
 FRONTEND_LOG_FILE=""
 LAST_STARTED_PID=""
 
@@ -78,6 +80,7 @@ configure_logging() {
   LOG_RUN_DIR="$candidate"
   START_LOG_FILE="$LOG_RUN_DIR/start.log"
   BACKEND_LOG_FILE="$LOG_RUN_DIR/backend.log"
+  NATIVE_LOG_FILE="$LOG_RUN_DIR/native.log"
   FRONTEND_LOG_FILE="$LOG_RUN_DIR/frontend.log"
   log "Logging to $LOG_RUN_DIR"
 }
@@ -86,6 +89,7 @@ failure_output_hint() {
   local component="${1:-}"
   if [[ -n "$LOG_RUN_DIR" ]]; then
     case "$component" in
+      native) printf 'see %s' "$NATIVE_LOG_FILE" ;;
       backend) printf 'see %s' "$BACKEND_LOG_FILE" ;;
       frontend) printf 'see %s' "$FRONTEND_LOG_FILE" ;;
       *) printf 'see %s' "$LOG_RUN_DIR" ;;
@@ -126,6 +130,10 @@ run_backend() {
   local backend_host="$1" backend_port="$2"
   cd "$BACKEND_DIR"
   exec setsid "$BACKEND_DIR/.venv/bin/python" -m uvicorn app.main:app --host "$backend_host" --port "$backend_port" --ws websockets
+}
+
+run_native() {
+  exec setsid "$PROJECT_ROOT/backend_v2/build/ros$ROS_VERSION/rvizweb_native" --host 127.0.0.1 --port "$1"
 }
 
 run_ros_master() {
@@ -214,7 +222,7 @@ wait_for_http() {
     kill -0 "$pid" 2>/dev/null || fail "$name exited during startup; $(failure_output_hint "$name")"
     # Health checks target loopback services and must never be routed through
     # HTTP_PROXY/HTTPS_PROXY inherited from the user's shell.
-    curl --noproxy '*' -fsS "$url" >/dev/null 2>&1 && return 0
+    curl --noproxy '*' --connect-timeout 1 --max-time 2 -fsS "$url" >/dev/null 2>&1 && return 0
 
     if (( attempt % 20 == 0 )); then
       log "Still waiting for $name at $url ($attempt/$max_attempts)"
@@ -272,19 +280,19 @@ log_access_urls() {
 cleanup() {
   trap - INT TERM EXIT
   log "Stopping services"
-  for pid in "$FRONTEND_PID" "$BACKEND_PID" "$ROS_MASTER_PID"; do
+  for pid in "$FRONTEND_PID" "$BACKEND_PID" "$NATIVE_PID" "$ROS_MASTER_PID"; do
     [[ -n "$pid" ]] || continue
     kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
   done
   for _ in {1..30}; do
     local alive=0
-    for pid in "$FRONTEND_PID" "$BACKEND_PID" "$ROS_MASTER_PID"; do
+    for pid in "$FRONTEND_PID" "$BACKEND_PID" "$NATIVE_PID" "$ROS_MASTER_PID"; do
       [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null && alive=1
     done
     [[ "$alive" -eq 0 ]] && return
     sleep 0.1
   done
-  for pid in "$FRONTEND_PID" "$BACKEND_PID" "$ROS_MASTER_PID"; do
+  for pid in "$FRONTEND_PID" "$BACKEND_PID" "$NATIVE_PID" "$ROS_MASTER_PID"; do
     [[ -n "$pid" ]] && kill -KILL -- "-$pid" 2>/dev/null || true
   done
 }
@@ -302,14 +310,18 @@ start_local() {
   check_command setsid
   load_env
   configure_logging
+  export RVIZWEB_ROS_BACKEND=v2
   load_ros
 
   check_command ffmpeg
+  check_command cmake
+  check_command c++
 
   local app_host="${APP_HOST:-127.0.0.1}"
   local app_port="${APP_PORT:-3000}"
   local backend_port
-  backend_port=8000
+  backend_port="${RVIZWEB_MANAGEMENT_PORT:-8000}"
+  local native_port="${RVIZWEB_NATIVE_PORT:-8082}"
   local backend_host_default="127.0.0.1"
   local backend_host="$backend_host_default"
   local backend_health_host
@@ -318,20 +330,31 @@ start_local() {
   backend_health_host="$(health_host_for_bind "$backend_host")"
   frontend_health_host="$(health_host_for_bind "$app_host")"
   export CORS_ORIGINS="${CORS_ORIGINS:-$(default_cors_origins "$app_host" "$app_port")}"
+  validate_port RVIZWEB_MANAGEMENT_PORT "$backend_port"
   validate_port APP_PORT "$app_port"
-  [[ "$app_port" != "$backend_port" ]] || fail "APP_PORT must differ from the internal backend port 8000"
+  [[ "$app_port" != "$backend_port" ]] || fail "APP_PORT must differ from the internal backend port $backend_port"
   check_port "$backend_port"
   check_port "$app_port"
 
+  validate_port RVIZWEB_NATIVE_PORT "$native_port"
+  [[ "$native_port" != "$app_port" && "$native_port" != "$backend_port" ]] || fail "Native, management and frontend ports must differ"
+  check_port "$native_port"
+  export ROS_V2_PROXY_TARGET="http://127.0.0.1:$native_port"
+
   [[ "$default_rvizweb_config" == *.rvizweb ]] || fail "Default frontend config must use the .rvizweb suffix"
   [[ -f "$PROJECT_ROOT/rvizweb_configs/$default_rvizweb_config" ]] || fail "Default frontend config not found: rvizweb_configs/$default_rvizweb_config"
-  check_ros_python "$BACKEND_DIR/.venv/bin/python" \
-    || fail "ROS Python imports failed; run ./start.sh sync and check ROS1_SETUP_PATHS / ROS2_SETUP_PATHS and Python compatibility"
 
   trap cleanup EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
   ensure_ros_master
+
+  log "Incremental build of C++ backend for ROS $ROS_VERSION"
+  run_with_optional_log "$NATIVE_LOG_FILE" "$PROJECT_ROOT/backend_v2/scripts/build.sh" --startup \
+    || fail "Native build failed; $(failure_output_hint native)"
+  start_in_background "$NATIVE_LOG_FILE" run_native "$native_port"
+  NATIVE_PID="$LAST_STARTED_PID"
+  wait_for_http "http://127.0.0.1:$native_port/api/v2/ros/health" native "$NATIVE_PID" 60
 
   if [[ "$frontend_mode" == "local" ]]; then
     log "Building frontend for normal local use"
@@ -339,7 +362,7 @@ start_local() {
       || fail "Frontend build failed; $(failure_output_hint frontend)"
   fi
 
-  log "Starting backend on $backend_port"
+  log "Starting backend on $backend_port ($RVIZWEB_ROS_BACKEND)"
   start_in_background "$BACKEND_LOG_FILE" run_backend "$backend_host" "$backend_port"
   BACKEND_PID="$LAST_STARTED_PID"
 
@@ -350,10 +373,13 @@ start_local() {
 
   wait_for_http "http://$backend_health_host:$backend_port/health" backend "$BACKEND_PID" 120
   wait_for_http "http://$frontend_health_host:$app_port" frontend "$FRONTEND_PID" 120
+  wait_for_http "http://$frontend_health_host:$app_port/api/v2/ros/health" native-proxy "$NATIVE_PID" 30
+  wait_for_http "http://$frontend_health_host:$app_port/health" management-proxy "$BACKEND_PID" 30
 
   log_access_urls "$app_host" "$app_port"
   log "Config:      rvizweb_configs/$default_rvizweb_config"
   local -a service_pids=("$BACKEND_PID" "$FRONTEND_PID")
+  [[ -z "$NATIVE_PID" ]] || service_pids+=("$NATIVE_PID")
   [[ -z "$ROS_MASTER_PID" ]] || service_pids+=("$ROS_MASTER_PID")
   wait -n "${service_pids[@]}"
   fail "A service stopped unexpectedly; $(failure_output_hint)"

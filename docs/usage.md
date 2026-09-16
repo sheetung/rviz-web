@@ -84,13 +84,9 @@
 
 ## 话题读取
 
-Displays 添加话题时会读取当前 ROS2 图：
+Displays 添加话题时由原生 C++ 后端读取当前 ROS 1 / ROS 2 图。前端 Add 面板和 Topic 下拉框打开时会刷新话题列表，也可以手动点击 `Refresh`。
 
-1. 后端优先执行 `ros2 topic list -t` 获取话题和类型。
-2. 如果 CLI 不可用或超时，回退到 rclpy 的 topic discovery。
-3. 前端 Add 面板和 Topic 下拉框打开时会刷新话题列表，也可以手动点击 `Refresh`。
-
-因此话题来源是当前 ROS2 系统和 `.rvizweb` 配置文件，不来自 `.env` 或前端硬编码默认值。
+因此话题来源是当前 ROS 系统和 `.rvizweb` 配置文件，不来自 `.env` 或前端硬编码默认值。
 
 ## 配置文件
 
@@ -204,37 +200,9 @@ cp .env.example .env
 ./start.sh
 ```
 
-### Docker Compose 部署
+### 部署范围
 
-Linux 设备可使用单容器 Compose 部署。容器通过宿主机网络加入 ROS2 DDS 网络，
-因此不需要映射端口：
-
-```bash
-docker compose up -d --build
-docker compose ps
-docker compose logs -f
-```
-
-浏览器访问 `http://localhost:3000/`。Compose 会读取项目根目录 `.env` 中的
-`ROS_DOMAIN_ID`、订阅/发布话题边界、应用标题和启动配置名，并持久化挂载
-`rvizweb_configs/`。Docker 日志使用本地驱动轮转，不受 `LOG_ENABLED` 控制。
-
-更新代码后重新构建并启动：
-
-```bash
-git pull
-docker compose up -d --build
-```
-
-停止服务：
-
-```bash
-docker compose down
-```
-
-容器目前只包含 ROS Humble 自带消息包。若话题使用自定义消息包，需要在
-`Dockerfile` 中安装或构建对应 ROS2 工作空间。`network_mode: host` 面向 Linux；
-Docker Desktop 环境的 ROS2 DDS 发现需要单独配置和验证。
+Docker 部署暂时搁置，不提供 Docker 部署方法。当前使用本地启动；升级、发布包与回退见 [第四阶段部署说明](backend-v2-stage4.md)。
 
 正常模式会先执行前端生产构建，再用静态预览服务提供页面，不监视源码文件。开发前端并需要热更新时使用：
 
@@ -244,13 +212,13 @@ Docker Desktop 环境的 ROS2 DDS 发现需要单独配置和验证。
 
 本地模式需要：
 
-- ROS2 环境可用
+- ROS 1 / ROS 2 的 C++ 开发环境、CMake、Boost.System 和 JsonCpp 可用
 - Node.js `^20.19.0` 或 `>=22.12.0`
 - Python 3.10–3.12
 - FFmpeg（用于把浏览器不支持的 RTSP 转为 MJPEG）
 - curl（若未安装 `uv`，启动脚本会通过官方安装脚本自动安装）
 
-启动脚本会读取项目根目录 `.env`，按 `ROS_WS_URL` 的版本后缀加载对应 ROS1/ROS2 环境，检查默认 `.rvizweb` 配置和端口，并等待前后端健康检查。`LOG_ENABLED` 默认为 `false`，此时输出只显示在终端，不写入 `logs/`；设为 `true` 时，每次启动会在 `logs/YYYYMMDD-HHMMSS/` 中分别创建 `start.log`、`backend.log` 和 `frontend.log`，且不覆盖历史目录。浏览器始终通过 `APP_HOST:APP_PORT` 访问；后端固定监听内部 `8000` 端口。设置 `APP_HOST=0.0.0.0` 时，脚本会自动显示检测到的局域网地址。启动失败会立即退出；Ctrl+C 会停止整个前后端进程组。
+启动脚本会读取项目根目录 `.env`，按 `ROS_WS_URL` 的版本后缀加载对应 ROS1/ROS2 环境，检查默认 `.rvizweb` 配置和端口，并等待前后端健康检查。`LOG_ENABLED` 默认为 `false`，此时输出只显示在终端，不写入 `logs/`；设为 `true` 时，每次启动会在 `logs/YYYYMMDD-HHMMSS/` 中分别创建 `start.log`、`native.log`、`backend.log` 和 `frontend.log`，且不覆盖历史目录。浏览器始终通过 `APP_HOST:APP_PORT` 访问；管理服务默认监听内部 `8000`、原生服务默认 `8082`，可分别配置。设置 `APP_HOST=0.0.0.0` 时，脚本会自动显示检测到的局域网地址。启动失败会立即退出；Ctrl+C 会停止整个前后端进程组。
 
 浏览器标签页和页面左上角标题可在 `.env` 中修改：
 
@@ -258,15 +226,8 @@ Docker Desktop 环境的 ROS2 DDS 发现需要单独配置和验证。
 VITE_APP_TITLE=RVizWeb
 ```
 
-正常部署不需要配置后端 IP、API URL、WebSocket URL 或 CORS。只有前后端刻意分离部署时，才需要使用高级覆盖项：
+正常部署使用同源代理：`/ws/v2/ros` 与 `/api/v2/ros/*` 连接 C++，配置和视频连接 FastAPI。`ROS_WS_URL` 的 /ws/ros1、/ws/ros2 后缀只用于本地 ROS 环境选择。独立部署可设置 `VITE_ROS_V2_WS_URL`，修改后重新构建前端。
 
-```env
-ROS_WS_URL=ws://192.168.31.16:8000/ws
-```
-
-不设置时使用当前页面同源的 `/ws`。修改 Vite 环境变量后需要重启开发服务或重新执行正常模式构建。
-当前 `/ws` 后端使用 `rclpy`，只支持 ROS2。后续接入 ROS1 时建议增加独立的
-`/ws/ros1` 适配器路由；仅修改路径或增加查询参数不会自动获得 ROS1 能力。
 
 点击点云视图工具栏中的相机监视器按钮后，会在按钮下方展开连接配置浮层。输入地址并连接，例如：
 
@@ -301,38 +262,7 @@ source /opt/ros/humble/setup.bash
 source <your_workspace>/install/setup.bash
 ```
 
-分别启动：
-
-> 一般不推荐分别启动
-
-```bash
-cd backend
-uv venv --system-site-packages .venv
-VIRTUAL_ENV="$PWD/.venv" uv sync --active
-source /opt/ros/humble/setup.bash
-source <your_workspace>/install/setup.bash
-uv run --no-sync uvicorn app.main:app --host 127.0.0.1 --port 8000
-```
-
-```bash
-cd frontend
-npm ci
-VITE_RVIZWEB_CONFIG=default.rvizweb npm run build
-npm run preview -- --host 127.0.0.1 --port 3000
-```
-
-访问地址：
-
-- 前端：`http://localhost:3000/`
-- 后端 API：`http://localhost:8000/`
-- 后端文档：`http://localhost:8000/docs`
-
-以上为默认端口。前端默认通过同源 `/api` 与 `/ws` 代理访问后端，因此反向代理和
-HTTPS 部署不需要向浏览器暴露后端端口。只有前后端分离部署时才设置
-`VITE_BACKEND_PUBLIC_URL`。
-
-`/docs` 使用仓库内固定版本的 Swagger UI 5.9.0 静态资源，不依赖浏览器访问外部
-CDN。`/docs` 与 `/openapi.json` 在服务监听范围内直接可用；`/redoc` 默认关闭。
+独立运行三个服务见 [原生开发启动](../backend_v2/README.md#开发启动)。
 
 ## 常见问题
 
@@ -428,7 +358,7 @@ npm test
 
 ```text
 rviz-web/
-├── backend/                  # FastAPI + rclpy 后端
+├── backend/                  # FastAPI 配置与视频管理，保留 v1 代码
 │   └── app/
 │       ├── api/v1/           # ROS、配置文件、可视化 API
 │       ├── static/swagger-ui/ # 本地 Swagger UI 静态资源

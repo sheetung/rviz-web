@@ -98,24 +98,29 @@ ensure_ffmpeg() {
   command -v ffmpeg >/dev/null 2>&1 || fail "ffmpeg installation completed but ffmpeg is not available in PATH"
 }
 
+check_management_python() {
+  "$BACKEND_DIR/.venv/bin/python" -c 'import sys; assert (3, 10) <= sys.version_info[:2] < (3, 13); import fastapi, uvicorn'
+  if [[ "$ROS_VERSION" == 1 && "${ROS1_AUTOSTART_MASTER:-false}" == true ]]; then
+    "$BACKEND_DIR/.venv/bin/python" -c 'import rosmaster.master' \
+      || fail "Automatic Master startup requires rosmaster in the management Python; use an existing Master or install compatible rosmaster packages"
+  fi
+}
+
 install_dependencies() {
   log "Installing/updating backend dependencies"
   (
     cd "$BACKEND_DIR"
-    local -a ros_dependencies=()
-    [[ "$ROS_VERSION" != 1 ]] || ros_dependencies=(--extra ros1)
     if [[ ! -d .venv ]]; then
-      if [[ "$ROS_VERSION" == 2 ]]; then
-        local ros_python
-        ros_python="$(ros2_python_for_venv)" \
-          || fail "The sourced ROS2 environment needs a Python 3.10–3.12 interpreter that can import rclpy"
-        uv venv --python "$ros_python" --system-site-packages .venv
-      else
-        uv venv --system-site-packages .venv
-      fi
+      # Management no longer imports rospy/rclpy; ROS C++ and Python versions are independent.
+      uv venv --python '>=3.10,<3.13' --system-site-packages .venv
     fi
-    VIRTUAL_ENV="$BACKEND_DIR/.venv" uv sync --active --frozen --no-dev "${ros_dependencies[@]}"
-    check_ros_python "$BACKEND_DIR/.venv/bin/python" || fail "ROS Python dependencies are unavailable after installation"
+    local -a optional_dependencies=()
+    if [[ "$ROS_VERSION" == 1 && "${ROS1_AUTOSTART_MASTER:-false}" == true ]]; then
+      optional_dependencies=(--extra ros1)
+    fi
+    VIRTUAL_ENV="$BACKEND_DIR/.venv" uv sync --active --frozen --no-dev "${optional_dependencies[@]}"
+    check_management_python
+
   )
 
   log "Installing/updating frontend dependencies"
@@ -132,8 +137,11 @@ main() {
   check_command npm
   check_command ss
   check_command setsid
+  check_command cmake
+  check_command c++
   ensure_ffmpeg
   install_dependencies
+  "$PROJECT_ROOT/backend_v2/scripts/build.sh"
   log "Installation complete"
 }
 

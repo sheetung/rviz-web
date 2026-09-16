@@ -11,9 +11,13 @@
                   <el-icon :size="14"><VideoCamera /></el-icon>
                   <span class="tool-label">移动</span><kbd>M</kbd>
                 </el-button>
-                <el-button size="small" :type="activeSceneTool === '2d_goal' ? 'primary' : 'default'" title="2D 目标 (G)" @click="activateSceneTool('2d_goal')" class="tool-btn">
+                <el-button size="small" :type="activeSceneTool === '2d_goal' ? 'primary' : 'default'" title="2D 目标 (G)" :disabled="readOnlyBackend" @click="activateSceneTool('2d_goal')" class="tool-btn">
                   <el-icon :size="14"><Flag /></el-icon>
                   <span class="tool-label">目标</span><kbd>G</kbd>
+                </el-button>
+                <el-button size="small" :type="activeSceneTool === '2d_pose' ? 'primary' : 'default'" title="2D 初始位姿" :disabled="readOnlyBackend" @click="activateSceneTool('2d_pose')" class="tool-btn">
+                  <el-icon :size="14"><Location /></el-icon>
+                  <span class="tool-label">位姿</span>
                 </el-button>
               </div>
               <span class="tool-separator"></span>
@@ -246,6 +250,8 @@
             :style="getSidePanelStyle('goal')"
           >
             <ExpectedGoalPanel
+              :read-only="readOnlyBackend"
+              :publishing="connectionStore.publishingTopics.includes(settingsSnapshot.goal.topic)"
               :goal="settingsSnapshot.goal"
               :fixed-frame="settingsSnapshot.fixedFrame"
               @goal-update="onGoalUpdate"
@@ -322,9 +328,9 @@
 </template>
 
 <script>
-import { ref, nextTick, defineAsyncComponent, onBeforeUnmount } from 'vue'
+import { ref, computed, nextTick, defineAsyncComponent, onBeforeUnmount } from 'vue'
 import {
-  MoreFilled, ArrowDown, Refresh, RefreshLeft, View, VideoCamera, VideoPause, Camera, Flag, DataAnalysis, Grid, Connection, Monitor
+  MoreFilled, ArrowDown, Refresh, RefreshLeft, View, VideoCamera, VideoPause, Camera, Flag, Location, DataAnalysis, Grid, Connection, Monitor
 } from '@element-plus/icons-vue'
 
 // 引入面板组件
@@ -341,6 +347,7 @@ import { videoApi } from '../../services/api'
 import { sanitizeRtspUrlForStorage } from '../../utils/rtspUrl'
 import { systemMessage } from '../../composables/useSystemMessage'
 import { cloneCameraState } from '../../utils/cameraState'
+import { useConnectionStore } from '../../composables/useConnectionStore'
 import { createSplitterGesture } from '../../utils/splitterGesture'
 
 const DEFAULT_SIDE_PANEL_HEIGHTS = {
@@ -371,6 +378,7 @@ export default {
     VideoPause,
     Camera,
     Flag,
+    Location,
     DataAnalysis,
     Grid,
     Connection,
@@ -385,6 +393,8 @@ export default {
     ExpectedGoalPanel
   },
   setup() {
+    const connectionStore = useConnectionStore()
+    const readOnlyBackend = computed(() => connectionStore.backendMode === 'v2' && connectionStore.capabilities?.read_only !== false)
     const scene3dRef = ref(null)
     const rtspVideoRef = ref(null)
     const topicConfigRef = ref(null)
@@ -1357,6 +1367,8 @@ export default {
     })
 
     return {
+      connectionStore,
+      readOnlyBackend,
       scene3dRef,
       showMoreTools,
       activePanel,

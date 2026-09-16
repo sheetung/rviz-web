@@ -1,0 +1,10 @@
+--- a/backend_v2/src/server.cpp
++++ b/backend_v2/src/server.cpp
+@@ -245,6 +245,7 @@
+     if (closed_ || writing_) return;
+     writing_ = outbox_.pop();
+     if (!writing_) return;
++    socket_.auto_fragment(false); // benchmark-only diagnostic
+     socket_.binary(writing_->binary);
+     write_timer_.expires_after(std::chrono::seconds(2));
+     write_timer_.async_wait([weak = weak_from_this()](beast::error_code error) {
