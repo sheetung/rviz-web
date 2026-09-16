@@ -1,0 +1,2 @@
+#pragma once
+namespace rvizweb { inline constexpr const char* backend_version = "@RVIZWEB_VERSION@"; }

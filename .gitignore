@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 venv/
+.venv/
 __pycache__/
 **/__pycache__/
 *.pyc
@@ -25,7 +26,7 @@ coverage.xml
 .mypy_cache
 .pytest_cache
 .hypothesis
-backend/venv
+backend/management/venv
 
 # CTest logs and temporary results
 Testing/

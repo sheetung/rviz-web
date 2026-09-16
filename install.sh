@@ -4,7 +4,7 @@ set -Eeuo pipefail
 export PATH="$HOME/.local/bin:$PATH"
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BACKEND_DIR="$PROJECT_ROOT/backend"
+MANAGEMENT_DIR="$PROJECT_ROOT/backend/management"
 FRONTEND_DIR="$PROJECT_ROOT/frontend"
 ENV_FILE="$PROJECT_ROOT/.env"
 
@@ -99,9 +99,9 @@ ensure_ffmpeg() {
 }
 
 check_management_python() {
-  "$BACKEND_DIR/.venv/bin/python" -c 'import sys; assert (3, 10) <= sys.version_info[:2] < (3, 13); import fastapi, uvicorn'
+  "$MANAGEMENT_DIR/.venv/bin/python" -c 'import sys; assert (3, 10) <= sys.version_info[:2] < (3, 13); import fastapi, uvicorn'
   if [[ "$ROS_VERSION" == 1 && "${ROS1_AUTOSTART_MASTER:-false}" == true ]]; then
-    "$BACKEND_DIR/.venv/bin/python" -c 'import rosmaster.master' \
+    "$MANAGEMENT_DIR/.venv/bin/python" -c 'import rosmaster.master' \
       || fail "Automatic Master startup requires rosmaster in the management Python; use an existing Master or install compatible rosmaster packages"
   fi
 }
@@ -109,7 +109,7 @@ check_management_python() {
 install_dependencies() {
   log "Installing/updating backend dependencies"
   (
-    cd "$BACKEND_DIR"
+    cd "$MANAGEMENT_DIR"
     if [[ ! -d .venv ]]; then
       # Management no longer imports rospy/rclpy; ROS C++ and Python versions are independent.
       uv venv --python '>=3.10,<3.13' --system-site-packages .venv
@@ -118,7 +118,7 @@ install_dependencies() {
     if [[ "$ROS_VERSION" == 1 && "${ROS1_AUTOSTART_MASTER:-false}" == true ]]; then
       optional_dependencies=(--extra ros1)
     fi
-    VIRTUAL_ENV="$BACKEND_DIR/.venv" uv sync --active --frozen --no-dev "${optional_dependencies[@]}"
+    VIRTUAL_ENV="$MANAGEMENT_DIR/.venv" uv sync --active --frozen --no-dev "${optional_dependencies[@]}"
     check_management_python
 
   )
@@ -141,7 +141,7 @@ main() {
   check_command c++
   ensure_ffmpeg
   install_dependencies
-  "$PROJECT_ROOT/backend_v2/scripts/build.sh"
+  "$PROJECT_ROOT/backend/scripts/build.sh"
   log "Installation complete"
 }
 

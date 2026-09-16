@@ -6,7 +6,7 @@
 
 在一个页面中查看三维点云、机器人位姿、实时曲线与视频，管理话题和任务配置。
 
-后端 v2 原生 C++ 已补齐控制与恢复，并提供第四阶段本地部署和源码包，支持 ROS 1 / ROS 2 的点云、里程计、TF、激光、路径、Marker、栅格和动态数值曲线，以及目标/初始位姿发布和断线恢复。见 [构建与启动说明](./backend_v2/README.md)；本地 `./start.sh` 固定启动 v2，v1 仅保留代码；Docker 部署暂时搁置，仅支持本地启动。已完成 [ROS 2 地图性能与极限测试](./docs/ros2-v1-v2-map-benchmark.md)。
+后端 v2 原生 C++ 已补齐控制与恢复，并提供第四阶段本地部署和源码包，支持 ROS 1 / ROS 2 的点云、里程计、TF、激光、路径、Marker、栅格和动态数值曲线，以及目标/初始位姿发布和断线恢复。见 [构建与启动说明](./backend/README.md)；本地 `./start.sh` 固定启动 v2，旧 Python ROS 后端已移除；Docker 部署暂时搁置，仅支持本地启动。已完成 [ROS 2 地图性能与极限测试](./docs/ros2-v1-v2-map-benchmark.md)。
 
 [中文](./README.md) | [English](./readme/README.en.md)
 
@@ -100,7 +100,7 @@ ROS1 已提供独立适配器与部署配置，参见 [ROS1 部署与测试](doc
 | ROS 2 | 已安装并能发现目标话题；默认 setup 路径为 `/opt/ros/humble/setup.bash` |
 | Node.js / npm | 精确版本见 `.node-version` / `.npm-version`；安装脚本自动检查并安装到项目缓存 |
 | Python | 3.10–3.12，仅用于管理服务，不要求导入 rospy/rclpy |
-| C++ 构建依赖 | C++17、CMake、Boost.System、JsonCpp 和所选 ROS 的开发包，见 [原生依赖](backend_v2/README.md#构建) |
+| C++ 构建依赖 | C++17、CMake、Boost.System、JsonCpp 和所选 ROS 的开发包，见 [原生依赖](backend/README.md#构建) |
 | uv | Python 环境管理；未安装时脚本会通过 curl 调用官方安装脚本 |
 | FFmpeg | 用于 RTSP 转流；同步依赖时脚本会检查，缺失时尝试通过系统包管理器安装 |
 
@@ -147,7 +147,7 @@ APP_HOST=0.0.0.0
 
 ### Docker 状态
 
-**Docker 部署暂时搁置，本版本仅支持本地部署，不提供 Docker 部署方法。** 仓库中的 Dockerfile / Compose 文件属于历史实现，尚未迁移到 v2，不能用于当前版本部署。
+**Docker 部署暂时搁置，本版本仅支持本地部署，不提供 Docker 部署方法。** 旧 Dockerfile / Compose 及容器脚本已移除。
 
 本地升级、源码发布包、配置兼容与回退步骤见 [第四阶段部署说明](docs/backend-v2-stage4.md)。
 
@@ -177,25 +177,28 @@ RVIZWEB_CONFIG=default.rvizweb ./start.sh local
 
 - **话题不可见**：核对 `ROS_DOMAIN_ID` 和 `ROS2_SETUP_PATHS`，确认后端加载了正确的工作空间。
 - **显示位置异常或没有对象**：检查 Fixed Frame 和 TF 链，并查看对应 Display 的状态信息。
-- **RTSP 无法连接**：确认后端可运行 FFmpeg 并访问视频源。默认策略禁止私网等地址，受信任相机的访问策略需由维护者在 `backend/app/core/config.py` 中调整并重新部署。
+- **RTSP 无法连接**：确认后端可运行 FFmpeg 并访问视频源。默认策略禁止私网等地址，受信任相机的访问策略需由维护者在 `backend/management/app/core/config.py` 中调整并重新部署。
 - **更多说明**：参阅[完整使用指南](./docs/usage.md)，包含话题发现、配置字段、视频接口、日志、分离部署和常见问题。
 
 ## 项目结构
 
 ```text
 rviz-web/
-├── backend/             # FastAPI 配置与视频服务，保留 v1 代码
-├── frontend/            # Vue 3、Three.js、Displays 与数据面板
-├── docker/              # Nginx 与容器启动配置
+├── backend/             # C++ 原生 ROS 后端
+│   ├── src/adapters/    # ROS1 / ROS2 适配器与专属消息解码
+│   ├── include/rvizweb/ # 公共接口、共享订阅与点云处理
+│   ├── management/     # FastAPI 配置、视频与系统状态服务
+│   ├── tests/          # 原生测试及隔离 ROS 集成验证
+│   ├── scripts/        # 构建与独立服务启动脚本
+│   └── VERSION         # C++ 后端版本
+├── frontend/            # Vue 3 / Three.js
+├── scripts/             # 安装辅助、独立模拟器与性能工具
 ├── docs/                # 使用指南与测试记录
-├── img/                 # 项目截图
-├── readme/              # README 多语言文档
-├── rvizweb_configs/     # 可保存和复用的工作区配置
+├── rvizweb_configs/     # 用户工作区配置
 ├── .env.example         # 环境变量示例
-├── docker-compose.yml   # 历史文件，Docker 部署已搁置
 ├── install.sh           # 依赖安装与同步
 ├── start.sh             # 本地与开发启动入口
-└── release.sh           # 前后端独立版本发布
+└── release.sh           # 组件版本发布
 ```
 
 ## 开发与贡献
@@ -215,7 +218,13 @@ npm test
 npm run build
 ```
 
-**后端检查**（加载 ROS 2 环境后，在 `backend/` 中执行）：
+**原生后端检查**（先加载所选 ROS 环境，在项目根目录执行）：
+
+```bash
+backend/scripts/build.sh
+```
+
+**管理服务检查**（不需要 ROS，在 `backend/management/` 中执行）：
 
 ```bash
 uv run pytest -q
@@ -256,7 +265,7 @@ uv run python -m compileall -q app
 
 感谢 **[lovelyyoshino/RVIZ-RQT-VISUAL](https://github.com/lovelyyoshino/RVIZ-RQT-VISUAL)** 提供项目基础与参考，原项目的版权声明保留在 [LICENSE](./LICENSE) 中。
 
-也感谢本项目使用的开源工具与生态：ROS 2 / rclpy、Vue、Three.js、Element Plus、FastAPI、FFmpeg 与 uv，以及所有提交代码、报告问题和分享使用经验的贡献者。
+也感谢本项目使用的开源工具与生态：ROS 1 / roscpp、ROS 2 / rclcpp、Vue、Three.js、Element Plus、FastAPI、FFmpeg 与 uv，以及所有提交代码、报告问题和分享使用经验的贡献者。
 
 ## 许可证
 

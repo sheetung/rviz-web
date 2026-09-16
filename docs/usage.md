@@ -49,7 +49,7 @@
 - 点云与路径样式：
   - PointCloud2 支持按话题选择 `Points` 或 `Boxes` 渲染，并分别设置 `Point Size` 或 `Box Size`。
   - 每个 PointCloud2 Display 可独立启用“稀疏显示”，设置每 2–32 个点保留 1 个点；该选项随 `.rvizweb` 配置保存。
-  - 稀疏显示发生在前端 Worker 解码阶段，不改变后端 XYZ 紧凑化和二进制传输，因此不会增加网络开销，也不会影响其他客户端。
+  - 稀疏显示发生在前端 Worker 解码阶段，不改变原始点云字段和二进制传输，因此不会增加网络开销，也不会影响其他客户端。
   - `Boxes` 使用实例化立方体渲染，适合占用体素地图；`Points` 适合高频、大规模实时点云。
   - Path 支持按话题设置线宽和颜色。
   - Marker/MarkerArray 按 `(ns,id)` 更新，支持 `DELETE`、`DELETEALL`、生命周期以及常用几何类型；未知类型会显示错误，不会伪装成其他几何体。
@@ -242,7 +242,7 @@ rtsp://192.168.1.66:8554/1
 “连接”会先等待后端取得有效视频首帧。只有探测成功才显示视频窗口；失败或无画面时不会创建空白窗口，而是通过页面系统消息报告具体错误。
 
 后端转流、并发和资源限制使用代码内置的系统参数，不从 `.env` 读取。
-项目维护者如需调整，应修改 `backend/app/core/config.py` 并重新部署。
+项目维护者如需调整，应修改 `backend/management/app/core/config.py` 并重新部署。
 
 应用默认只监听 `127.0.0.1`。若要开放到局域网，只需设置 `APP_HOST=0.0.0.0`；
 启动脚本会自动推导代理目标、健康检查地址和允许的浏览器来源。应用本身不提供
@@ -262,7 +262,7 @@ source /opt/ros/humble/setup.bash
 source <your_workspace>/install/setup.bash
 ```
 
-独立运行三个服务见 [原生开发启动](../backend_v2/README.md#开发启动)。
+独立运行三个服务见 [原生开发启动](../backend/README.md#开发启动)。
 
 ## 常见问题
 
@@ -331,7 +331,7 @@ npm run lint:check
 后端测试与静态检查：
 
 ```bash
-cd backend
+cd backend/management
 uv run pytest -q
 uv run flake8 app
 uv run python -m compileall -q app
@@ -345,49 +345,42 @@ npm test
 ```
 
 前端和后端使用独立语义化版本。前端版本来自 `frontend/package.json`，
-后端版本来自 `backend/pyproject.toml`。独立发布示例：
+C++ 后端版本来自 `backend/VERSION`，管理服务版本来自 `backend/management/pyproject.toml`。独立发布示例：
 
 ```bash
 ./release.sh frontend 1.4.0
-./release.sh backend 1.3.1
+./release.sh backend 2.0.0-dev.5
+./release.sh management 1.4.0
 ```
 
-发布标签分别为 `frontend-v1.4.0` 和 `backend-v1.3.1`；加上 `--push` 才会推送分支和标签。
+发布标签分别为 `frontend-v1.4.0` 和 `backend-v2.0.0-dev.5`；管理服务使用 `management-v1.4.0`；加上 `--push` 才会推送分支和标签。
 
 ## 目录结构
 
 ```text
 rviz-web/
-├── backend/                  # FastAPI 配置与视频管理，保留 v1 代码
-│   └── app/
-│       ├── api/v1/           # ROS、配置文件、可视化 API
-│       ├── static/swagger-ui/ # 本地 Swagger UI 静态资源
-│       └── services/         # rosbridge 与 ROS2 服务
-├── frontend/                 # Vue 3 + Three.js 前端
-│   └── src/
-│       ├── components/RViz/  # 3D 场景、Displays、控制器
-│       ├── components/panels # 设置、位置信息、期望目标和数据图表
-│       ├── components/layout # 主布局与面板容器
-│       ├── composables/      # ROS bridge 连接与状态
-│       └── services/         # 后端 API 封装
-├── rvizweb_configs/          # .rvizweb 配置文件目录
-├── .env                      # 运行环境配置与话题权限边界
-├── release.sh                # 前端/后端独立发布入口
-├── start.sh                  # 启动脚本
-└── README.md
+├── backend/
+│   ├── src/adapters/         # ROS1 / ROS2 原生实现与解码
+│   ├── include/rvizweb/      # 公共接口与数据处理
+│   ├── management/app/      # FastAPI 配置、视频与系统状态
+│   ├── tests/               # C++ / ROS 集成测试
+│   └── scripts/             # 构建与启动
+├── frontend/                # Vue / Three.js
+├── scripts/                 # 工具与独立模拟器
+└── rvizweb_configs/          # 用户配置
 ```
 
 ## 开发说明
 
 - 新增右侧面板：在 `MainLayout.vue` 接入组件，并把需要持久化的状态写入配置快照。
 - 新增可视化类型：优先扩展 `Scene3D.vue` 的订阅和渲染逻辑，再在 Displays 中补充对应的配置项。
-- 新增后端接口：放在 `backend/app/api/v1/`，前端统一通过 `frontend/src/services/api.js` 封装。
+- 新增后端接口：放在 `backend/management/app/api/v1/`，前端统一通过 `frontend/src/services/api.js` 封装。
 - 页面成功、提示、警告和错误消息统一通过 `frontend/src/composables/useSystemMessage.js` 展示；该入口统一控制显示时长、关闭按钮、重复消息抑制和后端错误解析。
 - 配置项命名保持稳定，避免破坏已有 `.rvizweb` 文件。
 
 ## 后续计划
 
-- 增加 ROS 1 适配，扩展可接入的 ROS 环境。
+- 完善 ROS1 / ROS2 跨机器与长时间运行验证。
 - 为 TF 增加严格的过去/未来外推错误状态，并继续覆盖 Display 生命周期。
 - 增加 WebSocket 重连和真实 ROS2 图的自动化集成测试。
 - 清理未引用的历史布局与示例组件，进一步降低维护成本。

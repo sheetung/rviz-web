@@ -30,10 +30,8 @@ MIB = 1024**2
 from metrics import distribution
 
 def command(mode, operation, request_id, **params):
-    if mode == 'v2':
-        method = {'subscribe': 'topics.subscribe', 'ping': 'ping'}[operation]
-        return json.dumps({'version': 2, 'id': request_id, 'method': method, 'params': params})
-    return json.dumps({'op': operation, 'id': request_id, **params})
+    method = {'subscribe': 'topics.subscribe', 'ping': 'ping'}[operation]
+    return json.dumps({'version': 2, 'id': request_id, 'method': method, 'params': params})
 
 def expected_hash(source, points):
     import numpy as np
@@ -126,11 +124,10 @@ class Client:
 async def scenario(case, args, index):
     target = args.output / f'{index:02d}-{case["name"]}-{case["mode"]}'
     target.mkdir()
+    if case['mode'] != 'v2':
+        raise ValueError('Only native v2 benchmark plans are supported')
     env = dict(os.environ, ROS_DOMAIN_ID=str(args.domain), ROS_LOCALHOST_ONLY='1',
-               ROS_LOG_DIR=str(target/'roslogs'), DEBUG='false', RVIZWEB_ROS_BACKEND='v1',
-               CORS_ORIGINS=f'http://127.0.0.1:{args.port+2}',
-               BENCH_PORT=str(args.port), BENCH_UNCAPPED='1' if case['mode']=='v1-uncapped' else '0',
-               PYTHONPATH=str(ROOT/'backend')+':'+os.environ.get('PYTHONPATH',''))
+               ROS_LOG_DIR=str(target/'roslogs'))
     if args.dds_profile:
         env.update(FASTRTPS_DEFAULT_PROFILES_FILE=str(args.dds_profile.resolve()), ROS_LOCALHOST_ONLY='0')
     processes, logs, tasks, clients = {}, [], [], []
@@ -145,10 +142,10 @@ async def scenario(case, args, index):
         source = args.maps / f'{case.get("map", "indoor")}.xyz'
         points = case['points']
         digest = expected_hash(source, points)
-        native = case['mode'] == 'v2'
-        server_cmd = [str(args.native), '--port', str(args.port)] if native else [sys.executable, str(ROOT/'scripts/benchmarks/v1_entry.py')]
+        native = True
+        server_cmd = [str(args.native), '--port', str(args.port)]
         spawn('server', server_cmd)
-        endpoint = f'http://127.0.0.1:{args.port}'+('/api/v2/ros/health' if native else '/health')
+        endpoint = f'http://127.0.0.1:{args.port}'+'/api/v2/ros/health'
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         def healthy():
             try:
@@ -161,7 +158,7 @@ async def scenario(case, args, index):
         else: raise RuntimeError('Server readiness timeout')
         spawn('source', [str(args.source), 'publish', str(source), str(points), str(case['hz']), str(target/'source.csv')])
         spawn('probe', [str(args.source), 'probe', str(target/'probe.csv')])
-        url = f'ws://127.0.0.1:{args.port}'+('/ws/v2/ros' if native else '/ws/ros2')
+        url = f'ws://127.0.0.1:{args.port}'+'/ws/v2/ros'
         if case.get('browser'):
             env['BROWSER_GL']=case.get('gl','swiftshader')
             env.update(ROS_V2_PROXY_TARGET=f'http://127.0.0.1:{args.port}', RVIZWEB_MANAGEMENT_PORT=str(args.port), APP_PORT=str(args.port+2))
@@ -170,7 +167,7 @@ async def scenario(case, args, index):
             preview_log=(target/'preview.log').open('w'); logs.append(preview_log)
             processes['preview']=subprocess.Popen(preview_cmd, cwd=ROOT/'frontend', env=env, stdout=preview_log, stderr=subprocess.STDOUT, start_new_session=True)
             await asyncio.sleep(1)
-            spawn('browser', ['node', str(ROOT/'scripts/benchmarks/browser.cjs'), f'http://127.0.0.1:{args.port+2}/?backend={"v2" if native else "v1"}', str(target.resolve())])
+            spawn('browser', ['node', str(ROOT/'scripts/benchmarks/browser.cjs'), f'http://127.0.0.1:{args.port+2}/', str(target.resolve())])
             ready=target/'browser-ready.json'
             for _ in range(450):
                 if ready.exists(): break
@@ -304,7 +301,7 @@ if __name__=='__main__':
     p.add_argument('--plan',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
     p.add_argument('--maps',type=Path,default=Path('/tmp/rviz-map-bench'))
     p.add_argument('--source',type=Path,default=Path('/tmp/rviz-map-bench/build/map_source'))
-    p.add_argument('--native',type=Path,default=Path('/tmp/rviz-v2-ros2-build/rvizweb_native'))
+    p.add_argument('--native',type=Path,default=ROOT/'backend/build/ros2/rvizweb_native')
     p.add_argument('--dds-profile',type=Path)
     p.add_argument('--domain',type=int,default=191);p.add_argument('--port',type=int,default=18191)
     asyncio.run(main(p.parse_args()))

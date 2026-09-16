@@ -1,7 +1,9 @@
+> 历史记录：旧 Python ROS 后端、旧验证入口及 Docker 文件已从当前源码移除。历史实现见 Git；当前目录与命令以 [原生后端说明](backend/README.md) 为准。
+
 # RVizWeb 项目状态
 
 前端和后端独立维护语义化版本，分别以 `frontend/package.json` 和
-`backend/pyproject.toml` 为唯一来源，界面会同时显示两者版本。
+`backend/management/pyproject.toml` 为唯一来源，界面会同时显示两者版本。
 
 更新时间：2026-09-15
 
@@ -108,7 +110,7 @@ Gateway 和公共应用层不依赖具体 ROS 版本；专用代码分别集中�
 
 ### 自动化测试仍需扩展
 
-`backend/tests/` 已覆盖配置原子保存、旧配置迁移、备份、公开访问策略、路径安全、RTSP
+`backend/management/tests/` 已覆盖配置原子保存、旧配置迁移、备份、公开访问策略、路径安全、RTSP
 地址策略/DNS 固定、ROS 消息数值转换与大小限制、WebSocket 心跳、慢客户端
 清理、publisher 所有权、本地 Swagger 资源和启动脚本基础行为。前端已有 TF
 时间戳、插值、坐标链、静态变换、缓存裁剪、点云二进制帧与稀疏解码、配置指纹、

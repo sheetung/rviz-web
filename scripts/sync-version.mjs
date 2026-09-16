@@ -9,8 +9,8 @@ const positional = args.filter(arg => arg !== '--check')
 const [component, requestedVersion] = positional
 const versionPattern = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/
 
-if (!['frontend', 'backend'].includes(component) || positional.length > 2) {
-  throw new Error('Usage: node scripts/sync-version.mjs <frontend|backend> [version] [--check]')
+if (!['frontend', 'backend', 'management'].includes(component) || positional.length > 2) {
+  throw new Error('Usage: node scripts/sync-version.mjs <frontend|backend|management> [version] [--check]')
 }
 if (requestedVersion && !versionPattern.test(requestedVersion)) {
   throw new Error(`Invalid semantic version: ${requestedVersion}`)
@@ -40,13 +40,20 @@ if (component === 'frontend') {
     writeFileSync(packagePath, `${JSON.stringify(packageDocument, null, 2)}\n`)
     writeFileSync(lockPath, `${JSON.stringify(lockDocument, null, 2)}\n`)
   }
+} else if (component === 'backend') {
+  const versionPath = resolve(root, 'backend/VERSION')
+  const current = readFileSync(versionPath, 'utf8').trim()
+  version = requestedVersion || current
+  if (!versionPattern.test(version)) throw new Error(`Invalid native version: ${version}`)
+  if (current !== version) mismatches.push(versionPath)
+  if (!checkOnly) writeFileSync(versionPath, `${version}\n`)
 } else {
-  const pyprojectPath = resolve(root, 'backend/pyproject.toml')
-  const lockPath = resolve(root, 'backend/uv.lock')
+  const pyprojectPath = resolve(root, 'backend/management/pyproject.toml')
+  const lockPath = resolve(root, 'backend/management/uv.lock')
   const pyproject = readFileSync(pyprojectPath, 'utf8')
   const lock = readFileSync(lockPath, 'utf8')
   const pyprojectPattern = /^version = "([^"]+)"/m
-  const lockPattern = /(name = "rviz-web-backend"\r?\nversion = ")[^"]+("\r?\n)/
+  const lockPattern = /(name = "rviz-web-management"\r?\nversion = ")[^"]+("\r?\n)/
   const currentVersion = pyproject.match(pyprojectPattern)?.[1]
   const lockedVersion = lock.match(lockPattern)?.[0].match(/version = "([^"]+)"/)?.[1]
   version = requestedVersion || currentVersion

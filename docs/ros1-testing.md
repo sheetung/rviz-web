@@ -39,7 +39,7 @@ Noetic 默认 Python 3.8 不能运行管理服务；可以独立使用 Python 3.
 - [第三阶段](backend-v2-stage3.md)：实际模拟接收器检查控制消息、资源释放和浏览器重连。
 - [第四阶段](backend-v2-stage4.md)：本地启动、配置兼容和源码包。
 
-先检查话题发现与坐标系，再用隔离测试话题验证控制；不要把“提交到 ROS”当作机器人执行确认。ROS1 Master 重启后的注册恢复、真实跨机器网络和长时间压力仍未完成验收。旧 `scripts/check_ros1_runtime.py` 用于保留的 v1 代码对照，不作为 v2 验收入口。
+先检查话题发现与坐标系，再用隔离测试话题验证控制；不要把“提交到 ROS”当作机器人执行确认。ROS1 Master 重启后的注册恢复、真实跨机器网络和长时间压力仍未完成验收。旧 Python ROS 后端及其验证入口已移除；使用 `backend/tests/` 下的原生 fixtures 和 smoke 测试。已拉取 `b23caeb` 中 ROS1 编译及旧版 CTest 的兼容修复。
 
 ## 无雷达模拟点云
 

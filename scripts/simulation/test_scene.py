@@ -82,7 +82,7 @@ def test_rejected_goal_does_not_replace_current_flight(tmp_path):
 
 
 def test_generated_view_config_passes_management_schema(tmp_path):
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend"))
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend" / "management"))
     from app.api.v1.configs import FrontendConfig
     from simulate_uav import make_config
     config = make_config(route(tmp_path), "sim-test.rvizweb")

@@ -101,7 +101,7 @@ height 是相对录制时雷达轨迹的高度偏移，不是地形跟随高度�
 核心测试：
 
 ```bash
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 backend/.venv/bin/python -m pytest scripts/simulation/test_scene.py -q
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 backend/management/.venv/bin/python -m pytest scripts/simulation/test_scene.py -q
 ```
 
 ## 本轮验证

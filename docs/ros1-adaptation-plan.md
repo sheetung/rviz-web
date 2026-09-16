@@ -1,3 +1,5 @@
+> 历史记录：旧 Python ROS 后端、旧验证入口及 Docker 文件已从当前源码移除。历史实现见 Git；当前目录与命令以 [原生后端说明](../backend/README.md) 为准。
+
 # ROS1 适配实施方案
 
 状态：核心适配已实现，2026-09-15。下文保留设计与验收要求；实际部署步骤、已执行测试及未验证边界见 [ROS1 测试指南](ros1-testing.md)。
@@ -118,7 +120,7 @@ IPC 的关联 ID、所有者释放、背压、超时和重启恢复必须独立�
 
 ## 5. 后端实现边界
 
-目标目录 `backend/app/services/ros1/`：
+目标目录 `backend/management/app/services/ros1/`：
 
 - `adapter.py`：实现现有 RosAdapter 契约，管理节点、订阅与发布资源。
 - `message_types.py`：ROS1 名称解析、生成类加载；内部仍用 `package/msg/Type`。
@@ -169,7 +171,7 @@ ROS1 验证使用原始 `.bag` + ROS1 播放器/发布节点；现有转换后�
 
 ## 8. 预计修改清单与完成定义
 
-- 配置：`.env.example`、用户 `.env`、`backend/app/core/config.py`。
+- 配置：`.env.example`、用户 `.env`、`backend/management/app/core/config.py`。
 - 启动：`start.sh`、`docker/start-container.sh`，选定方案对应 Dockerfile/Compose。
 - 后端：`services/dependencies.py`、新增 `services/ros1/`、`main.py` 与路由复用；
   仅有必要时扩展公共 capability/保留状态契约，不将 ROS1 特例散落到业务层。

@@ -205,7 +205,7 @@ ros2 bag play local_data/IndoorOffice1_ros2_full
 再在含 rosbags 的临时工具环境运行。示例（目标必须不存在，避免覆盖）：
 
 ```bash
-uv run --no-project --python backend/.venv/bin/python --with rosbags \
+uv run --no-project --python backend/management/.venv/bin/python --with rosbags \
   python scripts/prepare_mapping_bag.py \
   /home/ubt/Documents/multi_modal_lidar_dataset/dataset/indoor/IndoorOffice1/IndoorOffice1_dataset.bag \
   local_data/IndoorOffice1_ros2_full_new

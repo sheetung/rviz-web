@@ -62,7 +62,7 @@ RVIZWEB_POINTCLOUD_CROP=-20,-20,-5,20,20,10
 无 ROS 协议/算法测试：
 
 ```bash
-cmake -S backend_v2 -B /tmp/rviz-stage5-test -DRVIZWEB_WITH_ROS=OFF
+cmake -S backend -B /tmp/rviz-stage5-test -DRVIZWEB_WITH_ROS=OFF
 cmake --build /tmp/rviz-stage5-test -j2
 ctest --test-dir /tmp/rviz-stage5-test --output-on-failure
 ```
@@ -73,10 +73,10 @@ ctest --test-dir /tmp/rviz-stage5-test --output-on-failure
 
 ```bash
 source /opt/ros/humble/setup.bash
-backend_v2/scripts/build.sh
-backend/.venv/bin/python backend_v2/tests/stage5_smoke.py --duration 180
+backend/scripts/build.sh
+backend/management/.venv/bin/python backend/tests/stage5_smoke.py --duration 180
 # 小时级验收使用同一测试，延长时间：
-backend/.venv/bin/python backend_v2/tests/stage5_smoke.py --duration 3600
+backend/management/.venv/bin/python backend/tests/stage5_smoke.py --duration 3600
 ```
 
 脚本启动并清理自己创建的进程，先验证原始协议、实际 DDS 订阅数量、坏消息恢复及过滤限频，再启动真实地图无人机场景、三个正常客户端和一个停读客户端。结果默认写入 `/tmp/rviz-stage5-results.json`。

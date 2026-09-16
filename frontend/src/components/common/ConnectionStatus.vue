@@ -13,7 +13,7 @@
       >
         <el-icon><Connection /></el-icon>
         {{ connectionStore.connectionStatusText }}
-        <span v-if="connectionStore.backendMode === 'v2'"> · v2{{ connectionStore.capabilities?.read_only ? ' 只读' : '' }}</span>
+        <span> · v2{{ connectionStore.capabilities?.read_only ? ' 只读' : '' }}</span>
         <el-icon class="details-arrow" :class="{ open: showDetails }"><ArrowDown /></el-icon>
       </el-button>
     </el-badge>
@@ -60,7 +60,6 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { Connection, ArrowDown } from '@element-plus/icons-vue'
 import { useConnectionStore } from '../../composables/useConnectionStore'
-import { appApi } from '../../services/api'
 import StatusPanel from '../panels/StatusPanel.vue'
 
 export default {
@@ -75,12 +74,9 @@ export default {
     const showDetails = ref(false)
     const statusRef = ref(null)
     const frontendVersion = import.meta.env.VITE_FRONTEND_VERSION || 'unknown'
-    const backendVersion = ref('unknown')
     const backendVersionText = computed(() => {
       if (!connectionStore.isConnected) return '后端未连接'
-      const version = connectionStore.backendMode === 'v2'
-        ? connectionStore.capabilities?.backend_version
-        : backendVersion.value
+      const version = connectionStore.capabilities?.backend_version
       return version && !['unknown', 'unavailable'].includes(version)
         ? `后端 v${version}`
         : '后端版本未知'
@@ -134,18 +130,8 @@ export default {
       connectionStore.reconnect()
     }
 
-    const fetchBackendVersion = async () => {
-      try {
-        const response = await appApi.getVersion()
-        backendVersion.value = response?.version || 'unknown'
-      } catch {
-        backendVersion.value = 'unavailable'
-      }
-    }
-
     onMounted(() => {
       document.addEventListener('click', handleDocumentClick)
-      if (connectionStore.backendMode !== 'v2') fetchBackendVersion()
     })
 
     onUnmounted(() => {
@@ -161,7 +147,6 @@ export default {
       visibleTopics,
       hiddenTopicCount,
       frontendVersion,
-      backendVersion,
       backendVersionText,
       toggleDetails,
       closeDetails,

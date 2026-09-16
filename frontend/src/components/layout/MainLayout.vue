@@ -394,7 +394,7 @@ export default {
   },
   setup() {
     const connectionStore = useConnectionStore()
-    const readOnlyBackend = computed(() => connectionStore.backendMode === 'v2' && connectionStore.capabilities?.read_only !== false)
+    const readOnlyBackend = computed(() => connectionStore.capabilities?.read_only !== false)
     const scene3dRef = ref(null)
     const rtspVideoRef = ref(null)
     const topicConfigRef = ref(null)

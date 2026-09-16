@@ -14,8 +14,8 @@ def check(base, middleware=None):
         raise RuntimeError("Public URL does not serve the RVizWeb page")
     _, body = get("/health")
     management = json.loads(body)
-    if management.get("ros_backend") != "v2" or management.get("status") != "healthy":
-        raise RuntimeError(f"Management service is not healthy v2: {management}")
+    if management.get("ros_backend") != "native" or management.get("status") != "healthy":
+        raise RuntimeError(f"Management service is not healthy native management: {management}")
     _, body = get("/api/v2/ros/health")
     native = json.loads(body)
     if native.get("ready") is not True:

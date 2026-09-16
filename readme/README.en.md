@@ -30,7 +30,7 @@ View 3D point clouds, robot poses, live charts, and video in one place, with top
 
 RVizWeb is a web visualization tool for ROS, designed for robot debugging, UAV monitoring, and algorithm demonstrations. The backend connects to the ROS network and the frontend displays data in a browser, so viewers do not need to install a desktop visualization client.
 
-The project uses **Vue 3 + Three.js** for its interface and 3D scenes, and **FastAPI + rospy / rclpy** to connect to ROS1 / ROS2, with real-time data transported over WebSocket. It provides RViz-style Displays, Fixed Frame settings, and camera tools, along with `.rvizweb` configurations for different robots and tasks.
+The project uses **Vue 3 + Three.js** for its interface and 3D scenes, and **C++ roscpp / rclcpp** to connect to ROS1 / ROS2, with FastAPI providing configuration, video and host metrics, with real-time data transported over WebSocket. It provides RViz-style Displays, Fixed Frame settings, and camera tools, along with `.rvizweb` configurations for different robots and tasks.
 
 > ROS1 and ROS2 are supported. Each backend instance runs one ROS runtime; it is not a ROS1/ROS2 bridge. Custom messages require the corresponding workspace to be installed and sourced. See the [ROS1 guide](../docs/ros1-testing.md) for deployment and validation limits.
 
@@ -95,7 +95,7 @@ The following example uses ROS2; ROS1 configuration is described below. ROS1 nat
 | --- | --- |
 | ROS 2 | Installed and able to discover the target topics; the default setup path is `/opt/ros/humble/setup.bash` |
 | Node.js / npm | Exact versions are pinned in `.node-version` / `.npm-version`; the installer checks and installs them in the project cache |
-| Python | 3.10–3.12, with ROS 2's `rclpy` importable |
+| Python | 3.10–3.12 for management; no ROS Python dependency |
 | uv | Python environment management; if missing, the script uses curl to run the official installer |
 | FFmpeg | RTSP transcoding; dependency synchronization checks for it and attempts installation through the system package manager if missing |
 
@@ -138,35 +138,11 @@ ROS_IP=192.168.1.100
 APP_HOST=0.0.0.0
 ```
 
-Replace the addresses with the Master and local host LAN IPs. The backend still requires Python 3.10–3.12 with importable ROS1 packages, not Noetic's default Python 3.8. Use the separate ROS1 container if these requirements cannot be met. Keep one runtime per deployment; changing runtimes requires preparing a matching virtual environment.
+Replace the addresses with the Master and local host LAN IPs. The management service requires Python 3.10–3.12 independently of ROS. Native ROS1 uses roscpp; rospy is needed only by optional simulation and Master tools.
 
-### Option 2: Docker Compose
+### Deployment scope
 
-For Linux hosts with Docker Engine and Compose installed. After cloning the repository and preparing `.env`, run:
-
-```bash
-docker compose up -d --build
-docker compose ps
-docker compose logs -f
-```
-
-Open **http://localhost:3000/**. The container uses host networking to join the ROS 2 DDS network, and `rvizweb_configs/` is mounted for persistent configuration storage.
-
-- The container uses ROS 2 Humble. Install or build custom messages in the `Dockerfile`.
-- Compose uses `network_mode: host`; DDS discovery on Docker Desktop requires separate configuration and verification.
-- Nginx inside the container listens on port `3000`; the local startup variables `APP_HOST` / `APP_PORT` do not control the container's listening address.
-- Stop with `docker compose down`. After updating the code, run the build-and-start command again.
-
-> **Access scope:** The application does not provide login authentication. Use a trusted LAN, VPN, or firewall, and do not expose service ports directly to the public Internet. ROS publishing is allowed only on `/goal_pose`, `/initialpose`, and `/cmd_vel` by default; explicitly add other topics to the publish allowlist in `.env`.
-
-For ROS1 Docker deployment, set `ROS_MASTER_URI` and the local host's `ROS_IP` in `.env`, start your Master, then run:
-
-```bash
-docker compose -f docker-compose.ros1.yml up -d --build
-docker compose -f docker-compose.ros1.yml logs -f
-```
-
-The ROS1 image uses Ubuntu 22.04 native ROS1 1.15 packages and Python 3.10. Open `http://HOST_IP:3000`; do not run both default Compose deployments on the same ports. Stop with `docker compose -f docker-compose.ros1.yml down`. Container builds and target networks still require acceptance testing as described in the [ROS1 guide](../docs/ros1-testing.md).
+Docker deployment is postponed. Use the local startup above; no Docker deployment method is provided.
 
 ## Usage
 
@@ -190,22 +166,20 @@ The default configuration, [`rvizweb_configs/default.rvizweb`](../rvizweb_config
 
 - **Topics are missing:** Check `ROS_DOMAIN_ID` and `ROS2_SETUP_PATHS`, and confirm that the backend sourced the correct workspace.
 - **Objects are misplaced or missing:** Check the Fixed Frame, TF chain, and status of the corresponding Display.
-- **RTSP connection fails:** Confirm that the backend can run FFmpeg and reach the video source. The default policy blocks private networks and other restricted addresses; maintainers must adjust the policy for trusted cameras in `backend/app/core/config.py` and redeploy.
+- **RTSP connection fails:** Confirm that the backend can run FFmpeg and reach the video source. The default policy blocks private networks and other restricted addresses; maintainers must adjust the policy for trusted cameras in `backend/management/app/core/config.py` and redeploy.
 - **More details:** See the [complete user guide (Chinese)](../docs/usage.md) for topic discovery, configuration fields, video endpoints, logging, separate deployment, and FAQs.
 
 ## Project Structure
 
 ```text
 rviz-web/
-├── backend/             # FastAPI, rclpy, configuration and video services
+├── backend/             # C++ service, adapters, and nested management service
 ├── frontend/            # Vue 3, Three.js, Displays and data panels
-├── docker/              # Nginx and container startup configuration
 ├── docs/                # User guide and test records
 ├── img/                 # Project screenshots
 ├── readme/              # README translations
 ├── rvizweb_configs/     # Reusable workspace configurations
 ├── .env.example         # Environment variable template
-├── docker-compose.yml   # Docker Compose deployment
 ├── install.sh           # Dependency installation and synchronization
 ├── start.sh             # Local and development startup
 └── release.sh           # Independent frontend/backend releases
@@ -228,7 +202,7 @@ npm test
 npm run build
 ```
 
-**Backend checks** (source the ROS 2 environment, then run inside `backend/`):
+**Management checks** (no ROS required; run inside `backend/management/`):
 
 ```bash
 uv run pytest -q
@@ -269,8 +243,14 @@ If RVizWeb helps your work, consider giving it a Star or Forking the repository 
 
 Thanks to **[lovelyyoshino/RVIZ-RQT-VISUAL](https://github.com/lovelyyoshino/RVIZ-RQT-VISUAL)** for the project foundation and reference. The original copyright notice is preserved in [LICENSE](../LICENSE).
 
-We also thank the open-source tools and communities used by this project: ROS 2 / rclpy, Vue, Three.js, Element Plus, FastAPI, FFmpeg, and uv, along with everyone who contributes code, reports issues, and shares their experience.
+We also thank the open-source tools and communities used by this project: ROS1 / roscpp, ROS2 / rclcpp, Vue, Three.js, Element Plus, FastAPI, FFmpeg, and uv, along with everyone who contributes code, reports issues, and shares their experience.
 
 ## License
 
 This project is licensed under the **[BSD 3-Clause License](../LICENSE)**. See `LICENSE` for the full terms and copyright notice.
+
+## Native backend layout
+
+`backend/src/adapters/` contains ROS1 and ROS2 implementations; `backend/include/rvizweb/` contains their common interface and processing code. `backend/management/` contains FastAPI configuration, video and host metrics. The legacy Python ROS backend and v1 frontend transport have been removed. Native protocol v2 and management HTTP API v1 remain distinct API versions.
+
+After upgrading, run `./start.sh sync` then `./start.sh`. Only the ROS version selected by `.env` is built. `.env`, `rvizweb_configs/` and `local_data/` remain at the project root. Docker deployment is postponed; obsolete container files have been removed.

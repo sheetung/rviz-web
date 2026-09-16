@@ -4,7 +4,7 @@ set -Eeuo pipefail
 export PATH="$HOME/.local/bin:$PATH"
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BACKEND_DIR="$PROJECT_ROOT/backend"
+MANAGEMENT_DIR="$PROJECT_ROOT/backend/management"
 FRONTEND_DIR="$PROJECT_ROOT/frontend"
 LOG_DIR="$PROJECT_ROOT/logs"
 ENV_FILE="$PROJECT_ROOT/.env"
@@ -128,22 +128,22 @@ build_frontend() {
 
 run_backend() {
   local backend_host="$1" backend_port="$2"
-  cd "$BACKEND_DIR"
-  exec setsid "$BACKEND_DIR/.venv/bin/python" -m uvicorn app.main:app --host "$backend_host" --port "$backend_port" --ws websockets
+  cd "$MANAGEMENT_DIR"
+  exec setsid "$MANAGEMENT_DIR/.venv/bin/python" -m uvicorn app.main:app --host "$backend_host" --port "$backend_port" --ws websockets
 }
 
 run_native() {
-  exec setsid "$PROJECT_ROOT/backend_v2/build/ros$ROS_VERSION/rvizweb_native" --host 127.0.0.1 --port "$1"
+  exec setsid "$PROJECT_ROOT/backend/build/ros$ROS_VERSION/rvizweb_native" --host 127.0.0.1 --port "$1"
 }
 
 run_ros_master() {
-  exec setsid "$BACKEND_DIR/.venv/bin/python" "$PROJECT_ROOT/scripts/ros1-master.py" run
+  exec setsid "$MANAGEMENT_DIR/.venv/bin/python" "$PROJECT_ROOT/scripts/ros1-master.py" run
 }
 
 ensure_ros_master() {
   [[ "$ROS_VERSION" == 1 ]] || return 0
   local helper="$PROJECT_ROOT/scripts/ros1-master.py"
-  local python="$BACKEND_DIR/.venv/bin/python"
+  local python="$MANAGEMENT_DIR/.venv/bin/python"
   local autostart="${ROS1_AUTOSTART_MASTER:-false}"
   [[ "$autostart" == true || "$autostart" == false ]] || fail "ROS1_AUTOSTART_MASTER must be true or false"
   if "$python" "$helper" check >/dev/null 2>&1; then
@@ -185,7 +185,7 @@ is_initialized() {
     command -v uv >/dev/null 2>&1 || exit 1
     check_frontend_runtime || exit 1
     command -v ffmpeg >/dev/null 2>&1 || exit 1
-    [[ -x "$BACKEND_DIR/.venv/bin/python" ]] || exit 1
+    [[ -x "$MANAGEMENT_DIR/.venv/bin/python" ]] || exit 1
     [[ -d "$FRONTEND_DIR/node_modules" ]] || exit 1
   )
 }
@@ -310,7 +310,6 @@ start_local() {
   check_command setsid
   load_env
   configure_logging
-  export RVIZWEB_ROS_BACKEND=v2
   load_ros
 
   check_command ffmpeg
@@ -350,7 +349,7 @@ start_local() {
   ensure_ros_master
 
   log "Incremental build of C++ backend for ROS $ROS_VERSION"
-  run_with_optional_log "$NATIVE_LOG_FILE" "$PROJECT_ROOT/backend_v2/scripts/build.sh" --startup \
+  run_with_optional_log "$NATIVE_LOG_FILE" "$PROJECT_ROOT/backend/scripts/build.sh" --startup \
     || fail "Native build failed; $(failure_output_hint native)"
   start_in_background "$NATIVE_LOG_FILE" run_native "$native_port"
   NATIVE_PID="$LAST_STARTED_PID"
@@ -362,7 +361,7 @@ start_local() {
       || fail "Frontend build failed; $(failure_output_hint frontend)"
   fi
 
-  log "Starting backend on $backend_port ($RVIZWEB_ROS_BACKEND)"
+  log "Starting backend on $backend_port (management)"
   start_in_background "$BACKEND_LOG_FILE" run_backend "$backend_host" "$backend_port"
   BACKEND_PID="$LAST_STARTED_PID"
 

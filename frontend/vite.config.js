@@ -18,16 +18,9 @@ export default defineConfig(({ mode }) => {
     '/health': { target: `http://127.0.0.1:${backendPort}`, changeOrigin: true },
     '/api/v2/ros': { target: nativeTarget, changeOrigin: false },
     '/ws/v2/ros': { target: nativeTarget, ws: true, changeOrigin: false },
-    '/ros1/api': { target: `http://127.0.0.1:${backendPort}`, changeOrigin: true },
-    '/ros2/api': { target: `http://127.0.0.1:${backendPort}`, changeOrigin: true },
     '/api': {
       target: `http://127.0.0.1:${backendPort}`,
       changeOrigin: true,
-      xfwd: true
-    },
-    '/ws': {
-      target: `ws://127.0.0.1:${backendPort}`,
-      ws: true,
       xfwd: true
     }
   }

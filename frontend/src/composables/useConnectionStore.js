@@ -1,11 +1,11 @@
 /**
- * ROS2 连接状态管理 Composable
+ * ROS 原生连接状态管理 Composable
  */
 
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { debugLog } from '../utils/debug.js'
-import { selectedBackend, backendSocketUrl, createRosTransport } from '../services/rosTransport.js'
+import { backendSocketUrl, createRosTransport } from '../services/rosTransport.js'
 import { appApi } from '../services/api.js'
 import { systemMessage } from './useSystemMessage.js'
 
@@ -25,11 +25,10 @@ export const useConnectionStore = defineStore('connection', () => {
   
   // 默认经当前页面同源代理连接；仅在独立部署后端时设置公开 URL。
   const browserLocation = typeof window === 'undefined' ? null : window.location
-  const backendMode = selectedBackend()
   const capabilities = ref(null)
-  const transport = createRosTransport(backendMode)
+  const transport = createRosTransport()
   const wsUrl = ref(backendSocketUrl(
-    browserLocation, backendMode, import.meta.env?.ROS_WS_URL, import.meta.env?.VITE_ROS_V2_WS_URL
+    browserLocation, import.meta.env?.VITE_ROS_V2_WS_URL
   ))
   const reconnectAttempts = ref(0)
   const reconnectInterval = ref(3000)
@@ -133,16 +132,15 @@ export const useConnectionStore = defineStore('connection', () => {
         desiredSubscriptions.value.forEach((_, topic) => requestSubscription(topic))
         systemMessage.success('已连接到 ROS 服务')
       }
-      socket.onopen = () => { if (backendMode === 'v1') onReady() }
       socket.onmessage = event => {
         if (generation !== socketGeneration) return
         try {
           const message = transport.decode(event.data)
           if (!message) return
-          if (isConnecting.value && backendMode === 'v2' &&
+          if (isConnecting.value &&
             (message.op !== 'connection_info' || message.protocol_version !== 2)) throw new Error('Invalid hello')
           handleMessage(message)
-          if (backendMode === 'v2' && message.op === 'connection_info' && isConnecting.value) onReady()
+          if (message.op === 'connection_info' && isConnecting.value) onReady()
         } catch (error) {
           console.error('[ConnectionStore] 协议消息无效:', error)
           if (isConnecting.value) {
@@ -251,7 +249,7 @@ export const useConnectionStore = defineStore('connection', () => {
     switch (op) {
       case 'connection_info':
         capabilities.value = message.capabilities || null
-        if (message.protocol_version !== (backendMode === 'v2' ? 2 : 1)) {
+        if (message.protocol_version !== 2) {
           connectionError.value = '后端协议版本不兼容'
           intentionalDisconnect = true
           websocket.value?.close(1008, 'protocol_mismatch')
@@ -556,7 +554,7 @@ export const useConnectionStore = defineStore('connection', () => {
       throw new Error('Not connected to ROS')
     }
 
-    if (backendMode === 'v2' && !capabilities.value?.publish_types?.includes(messageType)) {
+    if (!capabilities.value?.publish_types?.includes(messageType)) {
       throw new Error('当前后端不支持此类型的发布')
     }
     if (publishingTopics.value.has(topic)) throw new Error('此话题正在提交，请等待确认')
@@ -565,7 +563,7 @@ export const useConnectionStore = defineStore('connection', () => {
     publishingTopics.value.set(topic, token)
     try {
       const result = await sendApiRequest('publish', { topic, type: messageType, msg: message })
-      if (!result?.success || (backendMode === 'v2' && result.status !== 'submitted')) throw new Error(`后端未确认消息发布: ${topic}`)
+      if (!result?.success || (result.status !== 'submitted')) throw new Error(`后端未确认消息发布: ${topic}`)
       if (generation === socketGeneration) advertisedTopics.value.add(topic)
       return true
     } finally {
@@ -581,7 +579,7 @@ export const useConnectionStore = defineStore('connection', () => {
     try {
       const topics = await sendApiRequest('get_topics')
       debugLog('获取到主题列表:', topics)
-      return backendMode === 'v2' ? topics.filter(topic => topic.supported !== false) : topics
+      return topics.filter(topic => topic.supported !== false)
     } catch (error) {
       console.error('获取主题列表失败:', error)
       return []
@@ -629,8 +627,7 @@ export const useConnectionStore = defineStore('connection', () => {
   // 获取系统状态
   const getSystemStatus = async () => {
     try {
-      if (backendMode === 'v2') return await appApi.getSystemStatus()
-      return await sendApiRequest('get_system_status')
+      return await appApi.getSystemStatus()
     } catch (error) {
       console.error('获取系统状态失败:', error)
       return null
@@ -678,7 +675,6 @@ export const useConnectionStore = defineStore('connection', () => {
   
   return {
     // 状态
-    backendMode,
     capabilities,
     publishingTopics: computed(() => Array.from(publishingTopics.value.keys())),
     isConnected,

@@ -5,8 +5,8 @@ import shutil
 p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('output',type=Path)
 a=p.parse_args()
-source=Path(__file__).resolve().parents[2]/'backend_v2'
-shutil.copytree(source,a.output,ignore=shutil.ignore_patterns('build','__pycache__'))
+source=Path(__file__).resolve().parents[2]/'backend'
+shutil.copytree(source,a.output,ignore=shutil.ignore_patterns('build','management','__pycache__'))
 server=a.output/'src/server.cpp'
 text=server.read_text()
 anchor='    socket_.binary(writing_->binary);'

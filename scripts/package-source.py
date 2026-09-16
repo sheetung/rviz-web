@@ -16,13 +16,14 @@ FILES = (
     "start.sh", "install.sh", "release.sh",
     "frontend/package.json", "frontend/package-lock.json", "frontend/index.html",
     "frontend/vite.config.js", "frontend/.eslintrc.cjs",
-    "backend/pyproject.toml", "backend/uv.lock",
-    "backend_v2/CMakeLists.txt", "backend_v2/README.md",
+    "backend/management/pyproject.toml", "backend/management/uv.lock",
+    "backend/CMakeLists.txt", "backend/README.md", "backend/VERSION",
+    "backend/include/rvizweb/version.hpp.in",
     "rvizweb_configs/default.rvizweb",
 )
 TREES = (
-    "frontend/src", "frontend/public", "frontend/tests", "backend/app", "backend/tests",
-    "backend_v2/src", "backend_v2/include", "backend_v2/scripts", "backend_v2/tests",
+    "frontend/src", "frontend/public", "frontend/tests", "backend/management/app", "backend/management/tests",
+    "backend/src", "backend/include", "backend/scripts", "backend/tests",
     "scripts",
 )
 EXTENSIONS = {".py", ".sh", ".bash", ".js", ".mjs", ".cjs", ".ts", ".vue", ".css",

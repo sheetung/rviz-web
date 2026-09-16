@@ -11,7 +11,7 @@ log() { printf '[release] %s\n' "$*"; }
 fail() { printf '[release] ERROR: %s\n' "$*" >&2; exit 1; }
 
 show_help() {
-  printf 'Usage: %s <frontend|backend> <version> [--push]\n' "$0"
+  printf 'Usage: %s <frontend|backend|management> <version> [--push]\n' "$0"
   printf 'Examples:\n'
   printf '  %s frontend 1.4.0\n' "$0"
   printf '  %s backend 1.3.1 --push\n' "$0"
@@ -24,8 +24,10 @@ restore_generated_files() {
     log "Release failed; restoring generated version files"
     if [[ "$COMPONENT" == "frontend" ]]; then
       git -C "$PROJECT_ROOT" restore -- frontend/package.json frontend/package-lock.json
+    elif [[ "$COMPONENT" == "backend" ]]; then
+      git -C "$PROJECT_ROOT" restore -- backend/VERSION
     else
-      git -C "$PROJECT_ROOT" restore -- backend/pyproject.toml backend/uv.lock
+      git -C "$PROJECT_ROOT" restore -- backend/management/pyproject.toml backend/management/uv.lock
     fi
   fi
   exit "$exit_code"
@@ -54,17 +56,20 @@ run_backend_checks() {
     # shellcheck disable=SC1091
     source "$PROJECT_ROOT/start.sh"
     load_env
-    load_ros
-    export PYTHONPATH="$PROJECT_ROOT/backend${PYTHONPATH:+:$PYTHONPATH}"
-    "$PROJECT_ROOT/backend/.venv/bin/pytest" -q "$PROJECT_ROOT/backend/tests"
-    "$PROJECT_ROOT/backend/.venv/bin/python" -m compileall -q "$PROJECT_ROOT/backend/app"
+    if [[ "$COMPONENT" == backend ]]; then
+      load_ros
+      "$PROJECT_ROOT/backend/scripts/build.sh"
+    fi
+    export PYTHONPATH="$PROJECT_ROOT/backend/management${PYTHONPATH:+:$PYTHONPATH}"
+    "$PROJECT_ROOT/backend/management/.venv/bin/python" -m pytest -q "$PROJECT_ROOT/backend/management/tests"
+    "$PROJECT_ROOT/backend/management/.venv/bin/python" -m compileall -q "$PROJECT_ROOT/backend/management/app"
   )
 }
 
 main() {
   parse_args "$@"
-  [[ "$COMPONENT" == "frontend" || "$COMPONENT" == "backend" ]] \
-    || fail "Component must be frontend or backend"
+  [[ "$COMPONENT" == "frontend" || "$COMPONENT" == "backend" || "$COMPONENT" == "management" ]] \
+    || fail "Component must be frontend, backend or management"
   [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] \
     || fail "Version must be semantic, for example 1.4.0"
 
@@ -89,9 +94,13 @@ main() {
     npm --prefix frontend run build
     git add frontend/package.json frontend/package-lock.json
   else
-    [[ -x backend/.venv/bin/python ]] || fail "Backend environment is missing"
+    [[ -x backend/management/.venv/bin/python ]] || fail "Backend environment is missing"
     run_backend_checks
-    git add backend/pyproject.toml backend/uv.lock
+    if [[ "$COMPONENT" == backend ]]; then
+      git add backend/VERSION
+    else
+      git add backend/management/pyproject.toml backend/management/uv.lock
+    fi
   fi
 
   git commit -m "chore($COMPONENT): release v$VERSION"

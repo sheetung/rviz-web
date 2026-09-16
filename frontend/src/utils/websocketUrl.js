@@ -5,20 +5,7 @@ const browserBaseUrl = (location) => {
   return `${protocol}//${authority}`
 }
 
-export const createApiBaseUrl = (location, explicitBackendUrl = '', explicitWebSocketUrl = '') => {
-  if (String(explicitWebSocketUrl || '').trim()) {
-    const socket = new URL(createWebSocketUrl(location, explicitWebSocketUrl))
-    const match = socket.pathname.match(/^(.*)\/ws(?:\/(ros[12]))?$/)
-    if (!match) throw new Error('ROS_WS_URL must end in /ws, /ws/ros1 or /ws/ros2')
-    socket.protocol = socket.protocol === 'wss:' ? 'https:' : 'http:'
-    const base = `${match[1]}${match[2] ? `/${match[2]}` : ''}`
-    socket.pathname = `${base}/api/v1`
-    socket.search = ''
-    if (explicitBackendUrl && createApiBaseUrl(location, explicitBackendUrl) !== socket.toString()) {
-      throw new Error('VITE_BACKEND_PUBLIC_URL conflicts with ROS_WS_URL')
-    }
-    return socket.toString()
-  }
+export const createApiBaseUrl = (location, explicitBackendUrl = '') => {
   const explicit = String(explicitBackendUrl || '').trim()
   if (!explicit) return '/api/v1'
 
@@ -46,5 +33,5 @@ export const createWebSocketUrl = (location, explicitWebSocketUrl = '') => {
     return url.toString()
   }
 
-  return `${protocol}//${sameOriginAuthority}/ws`
+  return `${protocol}//${sameOriginAuthority}/ws/v2/ros`
 }

@@ -38,7 +38,7 @@
 
 <script>
 import { ref, computed, onUnmounted, watch } from 'vue'
-import { useRosbridge } from '../../composables/useRosbridge'
+import { useRosClient } from '../../composables/useRosClient'
 import { useConnectionStore } from '../../composables/useConnectionStore'
 
 export default {
@@ -50,7 +50,7 @@ export default {
     }
   },
   setup(props) {
-    const rosbridge = useRosbridge()
+    const rosClient = useRosClient()
     const connectionStore = useConnectionStore()
 
     const positionData = ref({
@@ -169,7 +169,7 @@ export default {
     const clearPositionSubscriptions = () => {
       subscriptions.forEach(({ topic, subscription }) => {
         try {
-          rosbridge.unsubscribe(subscription || topic)
+          rosClient.unsubscribe(subscription || topic)
           console.log('[PosePanel] unsubscribed: ' + topic)
         } catch (e) {
           console.warn('[PosePanel] failed to unsubscribe ' + topic + ':', e)
@@ -199,7 +199,7 @@ export default {
 
       try {
         const type = 'nav_msgs/msg/Odometry'
-        const subscription = rosbridge.subscribe(topic, type, (message) => {
+        const subscription = rosClient.subscribe(topic, type, (message) => {
           updatePositionFromMessage(topic, type, message)
         })
 

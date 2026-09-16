@@ -1,6 +1,6 @@
 # ROS 2 地图性能基准
 
-这些脚本只启动独立测试进程，不修改后端默认参数、用户地图或 `.env`。需要已安装 ROS 2 Humble、项目 Python 环境中的 `numpy / psutil / websockets`，以及 C++ 编译依赖。先按 `backend_v2/README.md` 构建原生服务。
+这些脚本只启动独立测试进程，不修改后端默认参数、用户地图或 `.env`。需要已安装 ROS 2 Humble、项目 Python 环境中的 `numpy / psutil / websockets`，以及 C++ 编译依赖。先按 `backend/README.md` 构建原生服务。
 
 ## 准备
 
@@ -23,12 +23,11 @@ JSON 数组中每项是一轮；进程在轮次之间重启。例：
 
 ```json
 [
-  {"name":"indoor-10hz","mode":"v1","map":"indoor","points":189966,"hz":10,"seconds":15},
   {"name":"indoor-10hz","mode":"v2","map":"indoor","points":189966,"hz":10,"seconds":15}
 ]
 ```
 
-- `mode`：`v1` 使用默认 10 Hz / 8 MiB 限制；`v1-uncapped` 只在测试进程解除限频，仍保留大小限制；`v2` 使用原生服务。
+- `mode`：仅支持 `v2` 原生服务。历史 Python 对比实现已移除，历史报告保留。
 - `points`：小于地图点数时均匀抽取，大于原图时循环复制原有点，仅用于扩大数据量；不是新增测绘地图。
 - `clients`：正常 WebSocket 客户端数，默认 1。
 - `slow`：确认订阅后停止读取的客户端数，默认 0。
@@ -36,9 +35,9 @@ JSON 数组中每项是一轮；进程在轮次之间重启。例：
 - `browser:true`：使用真实生产前端和 Chromium，替代协议接收客户端。
 
 ```bash
-backend/.venv/bin/python scripts/benchmarks/run.py \
+backend/management/.venv/bin/python scripts/benchmarks/run.py \
   --plan /path/to/plan.json --output /tmp/unique-benchmark-results \
-  --native backend_v2/build/ros2/rvizweb_native
+  --native backend/build/ros2/rvizweb_native
 ```
 
 默认隔离 Domain 为 191，后端端口 18191；可用 `--domain / --port` 指定。输出目录必须不存在，防止覆盖旧证据。测试源只发布 `/benchmark/map`，不包含运动控制。

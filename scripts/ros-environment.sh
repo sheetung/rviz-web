@@ -1,11 +1,5 @@
 #!/usr/bin/env bash
-# Shared local/container ROS loader. Only source trusted setup files.
-ros2_python_for_venv() {
-  # rclpy contains native extensions: create the venv with the interpreter
-  # that can import the sourced ROS2 installation, not an auto-downloaded one.
-  python3 -c 'import sys; assert (3, 10) <= sys.version_info[:2] < (3, 13), "Backend requires Python 3.10–3.12"; import rclpy; print(sys.executable)'
-}
-
+# Shared local ROS loader. Only source trusted setup files.
 check_ros_python() {
   local python_executable="$1"
   if [[ "${ROS_VERSION:-}" == 1 ]]; then

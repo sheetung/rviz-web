@@ -1,3 +1,5 @@
+> 历史记录：旧 Python ROS 后端、旧验证入口及 Docker 文件已从当前源码移除。历史实现见 Git；当前目录与命令以 [原生后端说明](../backend/README.md) 为准。
+
 # 后端 v2 第二阶段验收
 
 日期：2026-09-16。C++ 版本 `2.0.0-dev.2`，协议版本仍为 2。本地入口固定 v2，v1 只保留代码和对照测试。
@@ -37,15 +39,15 @@ ROS2 示例，在同样 source 的三个终端设置 `ROS_DOMAIN_ID=192 ROS_LOCA
 
 ```bash
 # 终端 1
-backend_v2/build/ros2/rvizweb_native --port 18392
+backend/build/ros2/rvizweb_native --port 18392
 # 终端 2：请让服务先启动，静态数据在发布器启动后 2 秒只发布一次
-backend_v2/build/ros2/display_fixture
+backend/build/ros2/display_fixture
 # 终端 3
-backend/.venv/bin/python backend_v2/tests/display_smoke.py \
+backend/management/.venv/bin/python backend/tests/display_smoke.py \
   --middleware ros2 --url ws://127.0.0.1:18392/ws/v2/ros \
   --output /tmp/stage2-ros2-events.json
 # 停止发布器后验证缓存
-backend/.venv/bin/python backend_v2/tests/display_smoke.py \
+backend/management/.venv/bin/python backend/tests/display_smoke.py \
   --middleware ros2 --url ws://127.0.0.1:18392/ws/v2/ros --replay-only
 ```
 
@@ -55,7 +57,7 @@ ROS2 自定义包只用于测试，正常构建无需它：
 
 ```bash
 source /opt/ros/humble/setup.bash
-cmake -S backend_v2/tests/interfaces -B /tmp/rviz-stage2-interfaces-build \
+cmake -S backend/tests/interfaces -B /tmp/rviz-stage2-interfaces-build \
   -DCMAKE_INSTALL_PREFIX=/tmp/rviz-stage2-interfaces \
   -DPython3_EXECUTABLE=/usr/bin/python3 -DPYTHON_EXECUTABLE=/usr/bin/python3
 cmake --build /tmp/rviz-stage2-interfaces-build --parallel 2
@@ -63,7 +65,7 @@ cmake --install /tmp/rviz-stage2-interfaces-build
 source /tmp/rviz-stage2-interfaces/share/rvizweb_test_interfaces/local_setup.bash
 export ROS_DOMAIN_ID=193 ROS_LOCALHOST_ONLY=1
 # 在同样环境另一个终端启动原生服务，端口 18394
-backend/.venv/bin/python backend_v2/tests/custom_smoke.py
+backend/management/.venv/bin/python backend/tests/custom_smoke.py
 ```
 
 `compare_v1.py --reference <display_smoke生成的JSON> --url <隔离v1的ws地址>` 比较字段。v1 仅用测试入口运行，不恢复产品切换配置。

@@ -39,7 +39,7 @@ bag 时长约 66.10 秒，共 1983 条 `sensor_msgs/msg/PointCloud2` 消息。
 - 修改前：`fda4576`，两阶段 ROS2 边界重构之前。
 - 修改后：`320a14d` 加本次未提交的 Gateway / Application / ROS2 Adapter 拆分。
   不是仅比较最后一个未提交阶段。
-- 两版从独立临时目录运行，共用当前 `backend/.venv`；未加载项目 `.env`，
+- 两版从独立临时目录运行，共用当前 `backend/management/.venv`；未加载项目 `.env`，
   使用代码默认系统参数，显式设置 `DEBUG=false`。
 - 相同点云设置：XYZ 紧凑、每话题最高 10 Hz、输入上限 8 MiB；
   一个 WebSocket 客户端同时订阅三路，关闭 WebSocket 压缩。
@@ -106,10 +106,10 @@ depth=1，直接 rclpy 同时订阅三路，不启动后端、不转换、不转
 
 ```bash
 source /opt/ros/humble/setup.bash
-backend/.venv/bin/python /tmp/rvizweb-bag-ab-gVmDvE/benchmark.py
+backend/management/.venv/bin/python /tmp/rvizweb-bag-ab-gVmDvE/benchmark.py
 ROS_DOMAIN_ID=197 ROS_LOCALHOST_ONLY=1 \
   ROS_LOG_DIR=/tmp/rvizweb-bag-ab-gVmDvE/roslogs \
-  backend/.venv/bin/python /tmp/rvizweb-bag-ab-gVmDvE/probe.py
+  backend/management/.venv/bin/python /tmp/rvizweb-bag-ab-gVmDvE/probe.py
 ```
 
 复跑会覆盖该临时目录中的测试结果，不影响项目 `logs/` 或原始数据集。

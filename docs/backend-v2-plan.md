@@ -1,6 +1,6 @@
 # 后端 v2：ROS 原生接入与通信演进
 
-状态：阶段 0 / 1 已完成，阶段 2 显示、阶段 3 控制/恢复与阶段 4 本地部署已实现，第五阶段共享处理与诊断已实现并完成 ROS2 短时验收；Docker 搁置；本地启动和网页固定使用 v2，v1 仅保留代码作为对照。支持 ROS 1 / ROS 2 分别构建；C++ 接入 ROS，FastAPI 管理配置与视频。构建、协议和验证说明见 [backend_v2/README.md](../backend_v2/README.md)。
+状态：阶段 0 / 1 已完成，阶段 2 显示、阶段 3 控制/恢复与阶段 4 本地部署已实现，第五阶段共享处理与诊断已实现并完成 ROS2 短时验收；Docker 搁置；本地启动和网页固定使用 v2，旧 Python ROS 实现已移除。支持 ROS 1 / ROS 2 分别构建；C++ 接入 ROS，FastAPI 管理配置与视频。构建、协议和验证说明见 [backend/README.md](../backend/README.md)。
 
 ## 当前实现核查
 
@@ -8,8 +8,8 @@
 
 | 边界 | 当前实现 | v2 迁移注意事项 |
 | --- | --- | --- |
-| ROS 1 | `backend/app/services/ros1/adapter.py`，直接使用 rospy | 保留 ROS Master 配置、动态类型和静态 TF 行为 |
-| ROS 2 | `backend/app/services/ros2/adapter.py`，直接使用 rclpy | 保留话题发现、QoS、动态类型和 TF 行为 |
+| ROS 1 | `backend/management/app/services/ros1/adapter.py`，直接使用 rospy | 保留 ROS Master 配置、动态类型和静态 TF 行为 |
+| ROS 2 | `backend/management/app/services/ros2/adapter.py`，直接使用 rclpy | 保留话题发现、QoS、动态类型和 TF 行为 |
 | 应用契约 | `ros_contract.py`、`ros_application.py` | 已隔离适配器与会话管理，可作为能力清单 |
 | WebSocket | `ros_gateway.py`、`ws_handlers.py` | 自有服务，使用类似 rosbridge 的 op/topic/type 字段 |
 | 点云传输 | `connection_manager.py`、前端 `pointCloudBinary.js` | 已有 RVPC 二进制封装，不是全量 JSON/Base64 点云 |
@@ -21,7 +21,7 @@
 ## 参考项目
 
 - [ROS_Flutter_Gui_App](https://github.com/chengyangkj/ROS_Flutter_Gui_App)：主 README 说明 v2 改用 C++ 后端，取消 rosbridge。
-- [后端说明](https://github.com/chengyangkj/ROS_Flutter_Gui_App/blob/main/backend/README.md)：采用 Drogon HTTP/WebSocket，与 ROS 节点同进程运行。
+- [后端说明](https://github.com/chengyangkj/ROS_Flutter_Gui_App/blob/main/backend/management/README.md)：采用 Drogon HTTP/WebSocket，与 ROS 节点同进程运行。
 - [协议定义](https://github.com/chengyangkj/ROS_Flutter_Gui_App/blob/main/protocol/robot_message.proto)：定义机器人状态、图像、心跳及控制等 Protobuf 消息。
 
 该项目偏向二维导航应用。RVizWeb 需要保留动态 Displays、任意数值话题曲线、三维点云、Marker 和 TF；不能直接用固定的机器人状态消息替换所有话题。
@@ -58,7 +58,7 @@ flowchart LR
 | 现有配置、视频 HTTP 路径 | FastAPI | `.rvizweb` 管理、FFmpeg 会话与视频输出 |
 | `/` 与前端静态资源 | 统一入口 | 复用 Vue / Three.js 前端 |
 
-v2 路径为建议契约。迁移期保留现有 v1 路由；前端固定使用 v2，不能在故障时自动换服务并重发控制指令。
+v2 路径为建议契约。旧 ROS v1 路由已移除；前端固定使用 v2，不能在故障时自动换服务并重发控制指令。
 
 C++ 以 C++17 为基线，ROS 1 / ROS 2 使用各自适配器与独立构建目录。第一阶段选用 Boost.Beast 与 JsonCpp，ROS 回调通过有界队列交给网络事件循环。本机 ROS 2 Humble 可作为首个验证环境，ROS 1 沿用现有部署目标并补齐 C++ 构建和回放验证。
 
@@ -83,7 +83,7 @@ FastAPI 在 v2 模式下只启动配置、系统管理和视频相关能力，�
 
 现有 UI、Three.js 渲染、点云 Worker 与配置文件继续使用。新增传输接口，负责连接、能力发现、订阅、退订、发布与错误事件；v1/v2 的协议差异放在传输适配器内，不散落到各个显示组件。
 
-迁移后对业务组件使用 `useRosClient` 一类中性名称，但保留 v1 适配器代码用于对照验证。协议迁移必须验证 TF 缓存、断线订阅恢复、发布确认以及自定义数值字段。
+迁移后对业务组件使用 `useRosClient` 一类中性名称，只保留原生适配器。协议迁移必须验证 TF 缓存、断线订阅恢复、发布确认以及自定义数值字段。
 
 ## 分阶段交付
 
@@ -97,12 +97,12 @@ FastAPI 在 v2 模式下只启动配置、系统管理和视频相关能力，�
 
 建议第一次编码仅交付阶段 0 与阶段 1：
 
-- 独立目录 `backend_v2/`，包含公共接口、ROS 1 / ROS 2 适配器、网络与协议模块、测试和构建说明。
+- 独立目录 `backend/`，包含公共接口、ROS 1 / ROS 2 适配器、网络与协议模块、测试和构建说明。
 - 能连接、列出话题、订阅并显示 PointCloud2 / Odometry，正常退订与断开。
 - ROS 2 在本机实际验证；ROS 1 必须在具备依赖的目标环境完成编译和实际订阅，不能用 mock 测试宣称完整支持。
 - 核对点云字节、字段、时间戳与帧名，确认控制响应与大消息推送的队列隔离。
 
-v1 仅保留代码作为迁移参照；本地启动已固定使用 v2，不提供配置切换。阶段 1 不宣称已经完成全部 v1 功能迁移。
+v1 历史实现可通过 Git 查看；本地启动已固定使用 v2，不提供配置切换。阶段 1 不宣称已经完成全部 v1 功能迁移。
 
 ## 性能验收
 

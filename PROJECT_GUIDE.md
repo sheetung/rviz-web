@@ -16,7 +16,7 @@ RVizWeb 是一个面向 ROS 的浏览器可视化工具。前端使用 Vue 3、T
 
 - 前端：Vue 3、Vite、Three.js、Element Plus、Pinia。
 - 后端：Python 3.10–3.12、FastAPI、Uvicorn、rclpy。
-- Python 依赖：由 `backend/pyproject.toml`、`backend/uv.lock` 和 uv 管理。
+- Python 依赖：由 `backend/management/pyproject.toml`、`backend/management/uv.lock` 和 uv 管理。
 - 前端依赖：由 `frontend/package.json`、`frontend/package-lock.json` 和 npm 管理。
 - 可视化配置：保存在 `rvizweb_configs/*.rvizweb`。
 
@@ -115,7 +115,7 @@ ROS 话题名不应放在 `.env` 中。Displays、Fixed Frame、odom 话题、�
 
 该命令会：
 
-1. 创建带 `--system-site-packages` 的 `backend/.venv`，以便访问系统 ROS2 Python 包。
+1. 创建带 `--system-site-packages` 的 `backend/management/.venv`，以便访问系统 ROS2 Python 包。
 2. 使用 `uv sync --active --frozen --no-dev` 同步后端运行依赖；ROS1 额外启用 `--extra ros1`。
    新建 ROS2 虚拟环境时使用加载 ROS2 后能导入 `rclpy` 的 `python3`，避免 uv 自动选择不兼容的解释器。
    已有虚拟环境仍需与当前 ROS 版本的 Python 扩展兼容，切换版本不会自动重建环境。
@@ -211,7 +211,7 @@ DELETE /api/v1/configs/{name}
 
 ```text
 RVIZ-RQT-VISUAL/
-├── backend/
+├── backend/management/
 │   ├── app/
 │   │   ├── api/v1/          # configs、ros、viz API
 │   │   ├── core/            # Pydantic 环境配置
@@ -264,7 +264,7 @@ uv run python -m compileall -q app
 ### 独立版本发布
 
 - 前端版本唯一来源是 `frontend/package.json`，锁文件由发布脚本同步。
-- 后端版本唯一来源是 `backend/pyproject.toml`，锁文件由发布脚本同步。
+- 后端版本唯一来源是 `backend/management/pyproject.toml`，锁文件由发布脚本同步。
 - `./release.sh frontend <version>` 只运行前端检查，并创建 `frontend-v<version>` 标签。
 - `./release.sh backend <version>` 只运行后端检查，并创建 `backend-v<version>` 标签。
 - 默认只在本地创建提交和标签；显式传入 `--push` 才会推送。

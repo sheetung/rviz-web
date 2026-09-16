@@ -35,7 +35,7 @@ import { createNavigationPointer } from '../../utils/navigationPointer'
 import { shouldUseNonTypingSelect } from '../../utils/inputCapabilities'
 import { shouldHandleSceneShortcut } from '../../utils/sceneShortcuts'
 import * as THREE from 'three'
-import { useRosbridge } from '../../composables/useRosbridge'
+import { useRosClient } from '../../composables/useRosClient'
 import { useConnectionStore } from '../../composables/useConnectionStore'
 import { ROS_TOPICS, getDefaultVisualizationTopics, getPositionTopics } from '../../config/rosTopics'
 import { FollowFrameTracker, TfBuffer, frameIdFromMessage, messageTimestampMs } from '../../utils/tfBuffer'
@@ -57,7 +57,7 @@ export default {
   name: 'Scene3D',
   emits: ['object-selected', 'camera-moved', 'display-status', 'tool-change', 'recording-change', 'frame-list-change'],
   setup(props, { emit }) {
-    const rosbridge = useRosbridge()
+    const rosClient = useRosClient()
     const connectionStore = useConnectionStore()
     const containerRef = ref(null)
     const loading = ref(true)
@@ -933,7 +933,7 @@ export default {
         debugLog(`[Scene3D] 尝试订阅位置主题: ${topic} (${type})`)
 
         try {
-          rosbridge.subscribe(topic, type, (message) => {
+          rosClient.subscribe(topic, type, (message) => {
             // debugLog(`[Scene3D] 收到${topic}位置数据，更新机器人模型`)
 
             let position = null
@@ -1517,10 +1517,10 @@ export default {
       }
       
       try {
-        // 使用rosbridge订阅主题
-        // debugLog(`[Scene3D] 调用rosbridge.subscribe...`)
+        // 使用rosClient订阅主题
+        // debugLog(`[Scene3D] 调用rosClient.subscribe...`)
         
-        const subscription = rosbridge.subscribe(topicName, messageType, (message) => {
+        const subscription = rosClient.subscribe(topicName, messageType, (message) => {
           const now = Date.now()
           const subInfo = rosSubscriptions.get(topicName)
 
@@ -1551,7 +1551,7 @@ export default {
           }
         })
         
-        // debugLog(`[Scene3D] rosbridge.subscribe返回:`, subscription)
+        // debugLog(`[Scene3D] rosClient.subscribe返回:`, subscription)
         
         // 检查订阅是否成功
         if (subscription) {
@@ -1581,7 +1581,7 @@ export default {
           
           return true
         } else {
-          console.error(`[Scene3D] ❌ rosbridge.subscribe返回null/false`)
+          console.error(`[Scene3D] ❌ rosClient.subscribe返回null/false`)
           systemMessage.error(`订阅主题 ${topicName} 失败`)
           return false
         }
@@ -1602,7 +1602,7 @@ export default {
       if (subscription) {
         try {
           // debugLog(`[Scene3D] 取消订阅主题: ${topicName}`)
-          rosbridge.unsubscribe(subscription)
+          rosClient.unsubscribe(subscription)
           rosSubscriptions.delete(topicName)
           removeVisualization(topicName)
           // debugLog(`[Scene3D] 已成功取消订阅主题: ${topicName}`)
@@ -1629,7 +1629,7 @@ export default {
     }
 
     const subscribeToTfTopics = () => {
-      if (connectionStore.backendMode === 'v2' && !connectionStore.capabilities?.message_types?.includes('tf2_msgs/msg/TFMessage')) return
+      if (!connectionStore.capabilities?.message_types?.includes('tf2_msgs/msg/TFMessage')) return
       subscribeToRosTopic('/tf', 'tf2_msgs/msg/TFMessage')
       subscribeToRosTopic('/tf_static', 'tf2_msgs/msg/TFMessage')
     }
@@ -3206,61 +3206,6 @@ export default {
       }
     }
 
-    // 消息验证相关变量
-    let verificationSubscriptions = new Map()
-
-    // 启动消息验证
-    const startMessageVerification = () => {
-      if (connectionStore.backendMode === 'v2') return
-      debugLog('[Verification] 启动消息验证系统')
-
-      if (ROS_TOPICS.expectedControl) {
-        try {
-          const goalPoseVerification = rosbridge.subscribe(ROS_TOPICS.expectedControl, 'geometry_msgs/msg/PoseStamped', (message) => {
-            debugLog(`[Verification] ✅ 收到${ROS_TOPICS.expectedControl}消息:`, message)
-            systemMessage.success('验证成功：收到发布的目标点消息')
-          })
-
-          if (goalPoseVerification) {
-            verificationSubscriptions.set(ROS_TOPICS.expectedControl, goalPoseVerification)
-            debugLog(`[Verification] ✅ 成功订阅${ROS_TOPICS.expectedControl}用于验证`)
-          }
-        } catch (error) {
-          console.error(`[Verification] 订阅${ROS_TOPICS.expectedControl}失败:`, error)
-        }
-      }
-
-      if (ROS_TOPICS.initialPose) {
-        try {
-          const initialPoseVerification = rosbridge.subscribe(ROS_TOPICS.initialPose, 'geometry_msgs/msg/PoseWithCovarianceStamped', (message) => {
-            debugLog(`[Verification] ✅ 收到${ROS_TOPICS.initialPose}消息:`, message)
-            systemMessage.success('验证成功：收到发布的位置估计消息')
-          })
-
-          if (initialPoseVerification) {
-            verificationSubscriptions.set(ROS_TOPICS.initialPose, initialPoseVerification)
-            debugLog(`[Verification] ✅ 成功订阅${ROS_TOPICS.initialPose}用于验证`)
-          }
-        } catch (error) {
-          console.error(`[Verification] 订阅${ROS_TOPICS.initialPose}失败:`, error)
-        }
-      }
-    }
-
-    // 停止消息验证
-    const stopMessageVerification = () => {
-      debugLog('[Verification] 停止消息验证系统')
-      verificationSubscriptions.forEach((subscription, topic) => {
-        try {
-          rosbridge.unsubscribe(subscription)
-          // debugLog(`[Verification] 取消订阅验证话题: ${topic}`)
-        } catch (error) {
-          console.error(`[Verification] 取消订阅${topic}失败:`, error)
-        }
-      })
-      verificationSubscriptions.clear()
-    }
-
     // 生命周期
     onMounted(async () => {
       debugLog('Scene3D component mounted')
@@ -3286,18 +3231,16 @@ export default {
       }
 
       // 检查ROS连接状态并启动验证
-      if (rosbridge.isConnected) {
+      if (rosClient.isConnected) {
         debugLog('[Scene3D] ROS已连接，启动消息验证')
-        startMessageVerification()
         subscribeToDefaultVisualizationTopics()
         subscribeToTfTopics()
       } else {
         debugLog('[Scene3D] ROS未连接，等待连接后启动验证')
         // 定期检查连接状态
         const connectionCheckInterval = setInterval(() => {
-          if (rosbridge.isConnected) {
+          if (rosClient.isConnected) {
             debugLog('[Scene3D] ROS连接成功，启动消息验证')
-            startMessageVerification()
             subscribeToDefaultVisualizationTopics()
             subscribeToTfTopics()
             clearInterval(connectionCheckInterval)
@@ -3327,7 +3270,6 @@ export default {
       pendingPointClouds.clear()
 
       // 停止消息验证
-      stopMessageVerification()
       
       window.removeEventListener('resize', onWindowResize)
       window.removeEventListener('keydown', onKeyDown)
@@ -3338,7 +3280,7 @@ export default {
       // 清理所有ROS订阅
       rosSubscriptions.forEach((subscription, topicName) => {
         try {
-          rosbridge.unsubscribe(subscription)
+          rosClient.unsubscribe(subscription)
           // debugLog(`清理ROS订阅: ${topicName}`)
         } catch (error) {
           console.error(`清理ROS订阅失败: ${topicName}`, error)
@@ -3421,7 +3363,7 @@ export default {
     }
 
     const setNavigationTool = (tool) => {
-      if (connectionStore.backendMode === 'v2' && connectionStore.capabilities?.read_only !== false && ['2d_goal', '2d_pose'].includes(tool)) {
+      if (connectionStore.capabilities?.read_only !== false && ['2d_goal', '2d_pose'].includes(tool)) {
         systemMessage.warning('当前 v2 服务仅支持只读显示')
         return
       }
@@ -3567,14 +3509,14 @@ export default {
     const publishGoalPose = async (position, orientation, topicName = '') => {
       debugLog('[Navigation] 开始发布2D目标点')
       debugLog('[Navigation] 连接状态检查:', {
-        isConnected: rosbridge.isConnected,
+        isConnected: rosClient.isConnected,
         connectionStatus: connectionStore.connectionStatus,
         websocketState: connectionStore.websocket?.readyState
       })
 
-      if (!rosbridge.isConnected) {
-        console.error('[Navigation] ❌ ROS Bridge未连接，无法发布消息')
-        systemMessage.error('ROS Bridge未连接，请先连接到ROS系统')
+      if (!rosClient.isConnected) {
+        console.error('[Navigation] ❌ ROS 原生未连接，无法发布消息')
+        systemMessage.error('ROS 原生未连接，请先连接到ROS系统')
         return false
       }
 
@@ -3608,17 +3550,17 @@ export default {
         }
       }
 
-      if (connectionStore.backendMode === 'v2') delete goalMsg.header.stamp
+      delete goalMsg.header.stamp
 
       debugLog('[Navigation] 发布2D目标点消息:', JSON.stringify(goalMsg, null, 2))
 
       try {
-        const publishResult = await rosbridge.publish(
+        const publishResult = await rosClient.publish(
           publishTopic,
           'geometry_msgs/msg/PoseStamped',
           goalMsg
         )
-        // debugLog('[Navigation] rosbridge.publish返回结果:', publishResult)
+        // debugLog('[Navigation] rosClient.publish返回结果:', publishResult)
 
         if (publishResult) {
           const yawDegrees = (Math.atan2(2 * (orientation.w * orientation.z + orientation.x * orientation.y),
@@ -3671,14 +3613,14 @@ export default {
     const publishPoseEstimate = async (position, orientation) => {
       debugLog('[Navigation] 开始发布2D位置估计')
       debugLog('[Navigation] 连接状态检查:', {
-        isConnected: rosbridge.isConnected,
+        isConnected: rosClient.isConnected,
         connectionStatus: connectionStore.connectionStatus,
         websocketState: connectionStore.websocket?.readyState
       })
 
-      if (!rosbridge.isConnected) {
-        console.error('[Navigation] ❌ ROS Bridge未连接，无法发布消息')
-        systemMessage.error('ROS Bridge未连接，请先连接到ROS系统')
+      if (!rosClient.isConnected) {
+        console.error('[Navigation] ❌ ROS 原生未连接，无法发布消息')
+        systemMessage.error('ROS 原生未连接，请先连接到ROS系统')
         return false
       }
 
@@ -3723,17 +3665,17 @@ export default {
         }
       }
 
-      if (connectionStore.backendMode === 'v2') delete poseMsg.header.stamp
+      delete poseMsg.header.stamp
 
       debugLog('[Navigation] 发布2D位置估计消息:', JSON.stringify(poseMsg, null, 2))
 
       try {
-        const publishResult = await rosbridge.publish(
+        const publishResult = await rosClient.publish(
           ROS_TOPICS.initialPose,
           'geometry_msgs/msg/PoseWithCovarianceStamped',
           poseMsg
         )
-        // debugLog('[Navigation] rosbridge.publish返回结果:', publishResult)
+        // debugLog('[Navigation] rosClient.publish返回结果:', publishResult)
 
         if (publishResult) {
           const yawDegrees = (Math.atan2(2 * (orientation.w * orientation.z + orientation.x * orientation.y),
@@ -4611,8 +4553,8 @@ export default {
             } : null
           } : null
         },
-        rosbridge: {
-          connected: rosbridge?.isConnected ?? false,
+        rosClient: {
+          connected: rosClient?.isConnected ?? false,
           subscriptionCount: rosSubscriptions.size
         },
         performance: {
@@ -4632,7 +4574,7 @@ export default {
       debugLog('相机位置:', debugInfo.scene.camera?.position)
       debugLog('相机目标:', debugInfo.scene.camera?.target)
       debugLog('--- ROS连接 ---')
-      debugLog('ROSBridge连接状态:', debugInfo.rosbridge.connected)
+      debugLog('ROSBridge连接状态:', debugInfo.rosClient.connected)
       debugLog('--- 性能统计 ---')
       debugLog('FPS:', debugInfo.performance.fps)
       debugLog('渲染对象数:', debugInfo.performance.objects)

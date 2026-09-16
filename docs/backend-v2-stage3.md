@@ -51,17 +51,17 @@
 
 测试源：
 
-- `backend_v2/tests/control_test.cpp`：消息校验单测。
-- `backend_v2/tests/control_fixture.cpp`：模拟接收器，JSONL 输出收到的消息及发布者数量。
-- `backend_v2/tests/control_smoke.py`：实际 ROS 发布、回执、取消与资源验收。
-- `backend_v2/tests/browser_control.cjs`：真实 Chromium UI、服务重启和手动重连。
+- `backend/tests/control_test.cpp`：消息校验单测。
+- `backend/tests/control_fixture.cpp`：模拟接收器，JSONL 输出收到的消息及发布者数量。
+- `backend/tests/control_smoke.py`：实际 ROS 发布、回执、取消与资源验收。
+- `backend/tests/browser_control.cjs`：真实 Chromium UI、服务重启和手动重连。
 - `frontend/tests/connectionRecovery.test.js`：丢失回执、迟到响应、订阅竞态、握手与心跳超时。
 
 运行协议测试时，先在隔离 ROS_DOMAIN_ID（ROS 2）或独立 ROS_MASTER_URI（ROS 1）启动原生服务和 control_fixture，并设置发布白名单为 `/v3_test/*,/goal_pose,/initialpose`：
 
 ```bash
 # 将 URL、middleware、日志及标志路径替换为隔离测试实例。
-backend/.venv/bin/python backend_v2/tests/control_smoke.py \
+backend/management/.venv/bin/python backend/tests/control_smoke.py \
   --url ws://127.0.0.1:18412/ws/v2/ros --middleware ros2 \
   --capture /tmp/control-receiver.jsonl --late-flag /tmp/control-late
 ```

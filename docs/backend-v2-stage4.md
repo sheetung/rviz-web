@@ -1,12 +1,12 @@
 # 后端 v2 第四阶段：本地部署与源码包
 
-范围：ROS 1 / ROS 2 本地部署、配置兼容、源码发布包和回退。**Docker 部署按当前要求搁置，不提供 Docker 部署方法**；历史 Dockerfile / Compose 文件未迁移到 v2，不属于本阶段交付。
+范围：ROS 1 / ROS 2 本地部署、配置兼容、源码发布包和回退。**Docker 部署按当前要求搁置，不提供 Docker 部署方法**；旧 Dockerfile / Compose 文件已在后续目录清理中移除。
 
 ## 本地部署
 
 安装和启动仅编译 `.env` 选中的 ROS 版本：`ROS_WS_URL=/ws/ros2` 只构建 ROS 2，`/ws/ros1` 只构建 ROS 1。只需安装所选版本的依赖，不要求同时安装两套 ROS。
 
-需要 Linux、C++17、CMake、Boost.System、JsonCpp、对应 ROS 的 C++ 开发包、Python 3.10–3.12、FFmpeg。Node / npm 版本由仓库固定，安装脚本负责检查。ROS 消息开发依赖见 [原生构建说明](../backend_v2/README.md#构建)。
+需要 Linux、C++17、CMake、Boost.System、JsonCpp、对应 ROS 的 C++ 开发包、Python 3.10–3.12、FFmpeg。Node / npm 版本由仓库固定，安装脚本负责检查。ROS 消息开发依赖见 [原生构建说明](../backend/README.md#构建)。
 
 ```bash
 cp .env.example .env    # 仅新安装；已有 .env 请保留
@@ -20,7 +20,7 @@ cp .env.example .env    # 仅新安装；已有 .env 请保留
 - FastAPI 不再要求导入 rospy/rclpy。自动启动 ROS1 Master 和 Python 演示脚本另需兼容的 ROS Python 包。
 - 订阅自定义消息时，追加同版本工作空间 setup。ROS2 需要消息 C++ introspection 支持库。
 - 网页默认 3000，内部管理服务 8000、原生服务 8082；用 APP_PORT、RVIZWEB_MANAGEMENT_PORT、RVIZWEB_NATIVE_PORT 调整。
-- 日常启动只增量构建原生主程序，复用 CMake 配置；首次构建或 ROS 构建环境变化时重新配置。完整构建与测试使用 `./start.sh sync` 或 `backend_v2/scripts/build.sh`。
+- 日常启动只增量构建原生主程序，复用 CMake 配置；首次构建或 ROS 构建环境变化时重新配置。完整构建与测试使用 `./start.sh sync` 或 `backend/scripts/build.sh`。
 - 启动检查直接服务及网页代理链路；任一子服务退出会终止整组进程，Ctrl+C 同样清理。
 
 ```bash

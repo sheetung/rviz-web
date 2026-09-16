@@ -488,10 +488,9 @@
 <script>
 import { computed, ref, onMounted, watch } from 'vue'
 import { Plus, CopyDocument, Delete, View, Hide } from '@element-plus/icons-vue'
-import { useRosbridge } from '../../composables/useRosbridge'
+import { useRosClient } from '../../composables/useRosClient'
 import { useConnectionStore } from '../../composables/useConnectionStore'
 import { getThemeColor } from '../../utils/theme'
-import { rosApi } from '../../services/api'
 import { ROS_TOPICS } from '../../config/rosTopics'
 import { systemMessage } from '../../composables/useSystemMessage'
 import { shouldUseNonTypingSelect } from '../../utils/inputCapabilities'
@@ -537,7 +536,7 @@ export default {
     'position-settings-change'
   ],
   setup(props, { emit, expose }) {
-    const rosbridge = useRosbridge()
+    const rosClient = useRosClient()
     const allowSelectFiltering = !shouldUseNonTypingSelect()
     const availableTopics = ref([])
     const isLoadingTopics = ref(false)
@@ -664,16 +663,14 @@ export default {
       isLoadingTopics.value = true
       try {
         const connection = useConnectionStore()
-        const topicList = connection.backendMode === 'v2'
-          ? (connection.isConnected ? await connection.getTopics() : [])
-          : await rosApi.getTopics()
+        const topicList = connection.isConnected ? await connection.getTopics() : []
         availableTopics.value = normalizeTopicList(topicList)
       } catch (error) {
-        console.warn('HTTP 加载主题列表失败，回退到 websocket:', error)
+        console.warn('加载主题列表失败:', error)
         try {
           const [topicList, topicTypes] = await Promise.all([
-            rosbridge.getTopics(),
-            rosbridge.getTopicTypes()
+            rosClient.getTopics(),
+            rosClient.getTopicTypes()
           ])
           availableTopics.value = normalizeTopicList(topicList, topicTypes)
         } catch (wsError) {

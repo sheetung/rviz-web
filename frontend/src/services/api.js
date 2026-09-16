@@ -4,7 +4,6 @@
  */
 
 import axios from 'axios'
-import { selectedBackend } from './rosTransport.js'
 import { createApiBaseUrl } from '../utils/websocketUrl.js'
 
 // 创建 axios 实例
@@ -12,8 +11,7 @@ const browserLocation = typeof window === 'undefined' ? null : window.location
 const api = axios.create({
   baseURL: createApiBaseUrl(
     browserLocation,
-    import.meta.env?.VITE_BACKEND_PUBLIC_URL,
-    selectedBackend() === 'v2' ? '' : import.meta.env?.ROS_WS_URL
+    import.meta.env?.VITE_BACKEND_PUBLIC_URL
   ),
   timeout: 10000,
   headers: {
@@ -32,47 +30,6 @@ api.interceptors.response.use(
     return Promise.reject(error)
   }
 )
-
-/**
- * ROS API 接口
- */
-export const rosApi = {
-  // 获取主题列表
-  getTopics: () => api.get('/topics'),
-  
-  // 获取特定主题信息
-  getTopicInfo: (topicName) => api.get('/topic-info', { params: { topic_name: topicName } }),
-  
-  // 订阅主题
-  subscribeTopic: (topicName, messageType) => api.post('/topics/subscribe', {
-    topic: topicName,
-    message_type: messageType
-  }),
-  
-  // 取消订阅主题
-  unsubscribeTopic: (topicName) => api.post('/topics/unsubscribe', {
-    topic: topicName
-  }),
-  
-  // 发布消息到主题
-  publishMessage: (topicName, messageType, message) => api.post('/topics/publish', {
-    topic: topicName,
-    message_type: messageType,
-    msg: message
-  }),
-  
-  // 获取主题频率
-  getTopicFrequencies: () => api.get('/topics/frequencies'),
-  
-  // 获取节点列表
-  getNodes: () => api.get('/nodes'),
-  
-  // 获取特定节点信息
-  getNodeInfo: (nodeName) => api.get(`/nodes/${encodeURIComponent(nodeName)}`),
-  
-  // 获取系统状态
-  getSystemStatus: () => api.get('/status')
-}
 
 export const appApi = {
   getVersion: () => api.get('/version'),

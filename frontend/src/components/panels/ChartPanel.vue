@@ -336,7 +336,7 @@
 <script>
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { VideoPause, VideoPlay, Delete, Plus, Close, Search, ArrowRight, ArrowLeft, Refresh, View, Hide } from '@element-plus/icons-vue'
-import { useRosbridge } from '../../composables/useRosbridge'
+import { useRosClient } from '../../composables/useRosClient'
 import { systemMessage } from '../../composables/useSystemMessage'
 import {
   formatYAxisTick,
@@ -362,7 +362,7 @@ export default {
     Hide
   },
   setup() {
-    const rosbridge = useRosbridge()
+    const rosClient = useRosClient()
     const chartContainer = ref(null)
     const chartReady = ref(false)
 
@@ -1342,14 +1342,14 @@ export default {
       const subscription = fieldDiscoverySubscriptions.get(topicName)
       if (subscription) {
         fieldDiscoverySubscriptions.delete(topicName)
-        rosbridge.unsubscribe(subscription)
+        rosClient.unsubscribe(subscription)
       }
     }
 
     const startFieldDiscovery = (topic) => {
       const topicName = topic.value
       if (
-        !rosbridge.isConnected ||
+        !rosClient.isConnected ||
         subscriptions.has(topicName) ||
         fieldDiscoverySubscriptions.has(topicName)
       ) {
@@ -1363,7 +1363,7 @@ export default {
         isParsing: true
       }])
 
-      const subscription = rosbridge.subscribe(
+      const subscription = rosClient.subscribe(
         topicName,
         topic.messageType,
         message => {
@@ -1464,7 +1464,7 @@ export default {
         // 检查是否还有其他系列使用该主题
         const hasOtherSeries = dataSeries.value.some(s => s.topic === series.topic)
         if (!hasOtherSeries && subscriptions.has(series.topic)) {
-          rosbridge.unsubscribe(subscriptions.get(series.topic))
+          rosClient.unsubscribe(subscriptions.get(series.topic))
           subscriptions.delete(series.topic)
         }
 
@@ -1485,7 +1485,7 @@ export default {
       console.log(`Subscribing to topic: ${topicName}, type: ${messageType}`)
       stopFieldDiscovery(topicName)
 
-      const subscription = rosbridge.subscribe(topicName, messageType, (message) => {
+      const subscription = rosClient.subscribe(topicName, messageType, (message) => {
         const timestamp = Date.now()
         if (!isPaused.value) renderNow.value = timestamp
         markTopicHasData(topicName)
@@ -1658,14 +1658,14 @@ export default {
       try {
         console.log('[ChartPanel] 开始加载真实的ROS topics...')
 
-        if (!rosbridge.isConnected) {
+        if (!rosClient.isConnected) {
           console.warn('[ChartPanel] ROS未连接，尝试初始化连接...')
-          if (rosbridge.initializeConnection) {
-            await rosbridge.initializeConnection()
+          if (rosClient.initializeConnection) {
+            await rosClient.initializeConnection()
             await new Promise(resolve => setTimeout(resolve, 2000))
           }
 
-          if (!rosbridge.isConnected) {
+          if (!rosClient.isConnected) {
             console.error('[ChartPanel] ROS连接失败')
             if (notifySuccess) systemMessage.error('ROS连接失败，请检查服务器状态和网络连接')
             availableTopics.value = []
@@ -1676,8 +1676,8 @@ export default {
         // 并行获取topics、类型和频率信息
         console.log('[ChartPanel] 获取ROS系统信息...')
         const [topicsData, topicFrequencies] = await Promise.all([
-          rosbridge.getTopics(),
-          rosbridge.getTopicFrequencies()
+          rosClient.getTopics(),
+          rosClient.getTopicFrequencies()
         ])
 
         console.log('[ChartPanel] 获取到的原始数据:')
@@ -1965,9 +1965,9 @@ export default {
 
       // 初始化ROS连接
       console.log('[ChartPanel] 初始化ROS连接...')
-      if (rosbridge.initializeConnection) {
+      if (rosClient.initializeConnection) {
         try {
-          await rosbridge.initializeConnection()
+          await rosClient.initializeConnection()
           console.log('[ChartPanel] ROS连接初始化完成')
         } catch (error) {
           console.error('[ChartPanel] ROS连接初始化失败:', error)
@@ -1992,7 +1992,7 @@ export default {
 
       // 清理所有订阅
       subscriptions.forEach(subscription => {
-        rosbridge.unsubscribe(subscription)
+        rosClient.unsubscribe(subscription)
       })
       subscriptions.clear()
 
@@ -2025,15 +2025,15 @@ export default {
     // 调试ROS连接的函数
     const debugRosConnection = async () => {
       console.log('=== ROS连接调试开始 ===')
-      console.log('1. 连接状态:', rosbridge.isConnected)
-      console.log('2. rosbridge对象:', rosbridge)
+      console.log('1. 连接状态:', rosClient.isConnected)
+      console.log('2. rosClient对象:', rosClient)
 
-      if (!rosbridge.isConnected) {
+      if (!rosClient.isConnected) {
         console.log('3. 尝试重新连接...')
         try {
-          await rosbridge.initializeConnection()
+          await rosClient.initializeConnection()
           await new Promise(resolve => setTimeout(resolve, 1000))
-          console.log('4. 重连后状态:', rosbridge.isConnected)
+          console.log('4. 重连后状态:', rosClient.isConnected)
         } catch (error) {
           console.error('5. 重连失败:', error)
           systemMessage.error('ROS重连失败: ' + error.message)
@@ -2041,17 +2041,17 @@ export default {
         }
       }
 
-      if (rosbridge.isConnected) {
+      if (rosClient.isConnected) {
         console.log('6. 开始获取ROS数据...')
         try {
           // 测试基本API调用
-          const topics = await rosbridge.getTopics()
+          const topics = await rosClient.getTopics()
           console.log('7. Topics返回:', topics)
 
-          const topicTypes = await rosbridge.getTopicTypes()
+          const topicTypes = await rosClient.getTopicTypes()
           console.log('8. TopicTypes返回:', topicTypes)
 
-          const topicFrequencies = await rosbridge.getTopicFrequencies()
+          const topicFrequencies = await rosClient.getTopicFrequencies()
           console.log('9. TopicFrequencies返回:', topicFrequencies)
 
           if (topics && topics.length > 0) {
