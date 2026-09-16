@@ -276,7 +276,7 @@ class Session : public std::enable_shared_from_this<Session> {
     std::shared_ptr<RosPublisher> handle;
   };
   struct Publication {
-    explicit Publication(net::any_io_executor executor) : timer(executor) {}
+    explicit Publication(net::steady_timer::executor_type executor) : timer(executor) {}
     net::steady_timer timer;
     std::string topic;
     Json::Value message, response;

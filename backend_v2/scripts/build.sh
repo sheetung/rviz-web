@@ -34,5 +34,5 @@ if [[ "$startup" == true ]]; then
   cmake --build "$build_dir" --target rvizweb_native --parallel "${RVIZWEB_BUILD_JOBS:-2}"
 else
   cmake --build "$build_dir" --parallel "${RVIZWEB_BUILD_JOBS:-2}"
-  ctest --test-dir "$build_dir" --output-on-failure
+  (cd "$build_dir" && ctest --output-on-failure)
 fi
